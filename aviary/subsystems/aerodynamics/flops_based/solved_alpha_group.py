@@ -91,6 +91,8 @@ class SolvedAlphaGroup(om.Group):
                 Dynamic.Atmosphere.MACH,
                 Aircraft.Wing.AREA,
                 Dynamic.Atmosphere.DYNAMIC_PRESSURE,
+                Aircraft.Design.SUBSONIC_DRAG_COEFF_FACTOR,
+                Aircraft.Design.SUPERSONIC_DRAG_COEFF_FACTOR,
             ]
             + extra_promotes,
             promotes_outputs=['CD', Dynamic.Vehicle.LIFT, Dynamic.Vehicle.DRAG],

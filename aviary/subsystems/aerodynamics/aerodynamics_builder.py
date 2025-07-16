@@ -226,6 +226,8 @@ class CoreAerodynamicsBuilder(AerodynamicsBuilderBase):
                     Dynamic.Atmosphere.MACH,
                     Dynamic.Vehicle.MASS,
                     Dynamic.Atmosphere.STATIC_PRESSURE,
+                    Aircraft.Design.SUBSONIC_DRAG_COEFF_FACTOR,
+                    Aircraft.Design.SUPERSONIC_DRAG_COEFF_FACTOR,
                     'aircraft:*',
                 ]
 
@@ -655,6 +657,8 @@ COMPUTED_CORE_INPUTS = [
 
 TABULAR_CORE_INPUTS = [
     Aircraft.Wing.AREA,
+    Aircraft.Design.SUBSONIC_DRAG_COEFF_FACTOR,
+    Aircraft.Design.SUPERSONIC_DRAG_COEFF_FACTOR,
 ]
 
 # Parameters for low speed aero.
