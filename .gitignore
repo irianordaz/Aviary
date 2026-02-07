@@ -164,3 +164,6 @@ output_list.txt
 
 # NFS temp files
 .nfs*
+# pixi environments
+.pixi/*
+!.pixi/config.toml
