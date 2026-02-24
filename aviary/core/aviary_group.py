@@ -1152,74 +1152,82 @@ class AviaryGroup(om.Group):
             bus_variables = subsystem.get_pre_mission_bus_variables(self.aviary_inputs)
             if bus_variables is not None:
                 for bus_variable, variable_data in bus_variables.items():
-                    mission_variable_name = variable_data['mission_name']
-                    src_indices = variable_data.get('src_indices', None)
 
-                    # check if mission_variable_name is a list
-                    if not isinstance(mission_variable_name, list):
-                        mission_variable_name = [mission_variable_name]
+                    if "mission_name" in variable_data:
+                        mission_variable_name = variable_data['mission_name']
+                        src_indices = variable_data.get('src_indices', None)
 
-                    # loop over the mission_variable_name list and add each variable to
-                    # the trajectory
-                    for mission_var_name in mission_variable_name:
-                        if mission_var_name not in self.meta_data:
-                            # base_units = self.get_io_metadata(includes=f'pre_mission.{external_subsystem.name}.{bus_variable}')[f'pre_mission.{external_subsystem.name}.{bus_variable}']['units']
-                            base_units = variable_data['units']
+                        # check if mission_variable_name is a list
+                        if not isinstance(mission_variable_name, list):
+                            mission_variable_name = [mission_variable_name]
 
-                            shape = variable_data.get('shape', _unspecified)
+                        # loop over the mission_variable_name list and add each variable to
+                        # the trajectory
+                        for mission_var_name in mission_variable_name:
+                            if mission_var_name not in self.meta_data:
+                                # base_units = self.get_io_metadata(includes=f'pre_mission.{external_subsystem.name}.{bus_variable}')[f'pre_mission.{external_subsystem.name}.{bus_variable}']['units']
+                                base_units = variable_data['units']
 
-                            targets = mission_var_name
-                            if '.' in mission_var_name:
-                                # Support for non-hierarchy variables as parameters.
-                                mission_var_name = mission_var_name.split('.')[-1]
+                                shape = variable_data.get('shape', _unspecified)
 
-                            if 'phases' in variable_data:
-                                # Support for connecting bus variables into a subset of
-                                # phases.
-                                for phase_name in variable_data['phases']:
-                                    phase = getattr(self.traj.phases, phase_name)
+                                targets = mission_var_name
+                                if '.' in mission_var_name:
+                                    # Support for non-hierarchy variables as parameters.
+                                    mission_var_name = mission_var_name.split('.')[-1]
 
-                                    phase.add_parameter(
+                                if 'phases' in variable_data:
+                                    # Support for connecting bus variables into a subset of
+                                    # phases.
+                                    for phase_name in variable_data['phases']:
+                                        phase = getattr(self.traj.phases, phase_name)
+
+                                        phase.add_parameter(
+                                            mission_var_name,
+                                            opt=False,
+                                            static_target=True,
+                                            units=base_units,
+                                            shape=shape,
+                                            targets=targets,
+                                        )
+
+                                        self.connect(
+                                            f'pre_mission.{bus_variable}',
+                                            f'traj.{phase_name}.parameters:{mission_var_name}',
+                                            src_indices=src_indices,
+                                        )
+
+                                else:
+                                    self.traj.add_parameter(
                                         mission_var_name,
                                         opt=False,
                                         static_target=True,
                                         units=base_units,
                                         shape=shape,
-                                        targets=targets,
+                                        targets={phase_name: [targets] for phase_name in base_phases},
                                     )
 
                                     self.connect(
                                         f'pre_mission.{bus_variable}',
-                                        f'traj.{phase_name}.parameters:{mission_var_name}',
+                                        'traj.parameters:' + mission_var_name,
                                         src_indices=src_indices,
                                     )
 
-                            else:
-                                self.traj.add_parameter(
-                                    mission_var_name,
-                                    opt=False,
-                                    static_target=True,
-                                    units=base_units,
-                                    shape=shape,
-                                    targets={phase_name: [targets] for phase_name in base_phases},
-                                )
-
-                                self.connect(
-                                    f'pre_mission.{bus_variable}',
-                                    'traj.parameters:' + mission_var_name,
-                                    src_indices=src_indices,
-                                )
-
                     if 'post_mission_name' in variable_data:
                         # check if post_mission_variable_name is a list
-                        post_mission_variable_name = variable_data['post_mission_name']
-                        if not isinstance(post_mission_variable_name, list):
-                            post_mission_variable_name = [post_mission_variable_name]
+                        post_mission_var_name = variable_data['post_mission_name']
+                        src_indices = variable_data.get('src_indices', None)
 
-                        for post_mission_var_name in post_mission_variable_name:
+                        if '.' in post_mission_var_name:
+                            # Support for non-hierarchy variables as parameters.
+                            post_mission_var_name = post_mission_var_name.split('.')[-1]
+
+                        if not isinstance(post_mission_var_name, list):
+                            post_mission_var_name = [post_mission_var_name]
+
+                        for post_mission_var_name in post_mission_var_name:
                             self.connect(
-                                f'pre_mission.{bus_variable}',
-                                post_mission_var_name,
+                                f'pre_mission.{subsystem.name}.{bus_variable}',
+                                f'{subsystem.name}.{post_mission_var_name}',
                                 src_indices=src_indices,
                             )
 
