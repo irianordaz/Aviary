@@ -1222,13 +1222,9 @@ class AviaryGroup(om.Group):
 
                         for post_mission_var_name in post_mission_var_names:
 
-                            if '.' in post_mission_var_name:
-                                # Support for non-hierarchy variables as parameters.
-                                post_mission_var_name = post_mission_var_name.split('.')[-1]
-
                             self.connect(
-                                f'pre_mission.{subsystem.name}.{bus_variable}',
-                                f'{subsystem.name}.{post_mission_var_name}',
+                                f'pre_mission.{bus_variable}',
+                                f'{post_mission_var_name}',
                                 src_indices=src_indices,
                             )
 
