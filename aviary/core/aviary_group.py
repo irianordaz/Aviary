@@ -1153,7 +1153,7 @@ class AviaryGroup(om.Group):
             if bus_variables is not None:
                 for bus_variable, variable_data in bus_variables.items():
 
-                    if "mission_name" in variable_data:
+                    if 'mission_name' in variable_data:
                         mission_var_names = variable_data['mission_name']
                         src_indices = variable_data.get('src_indices', None)
 
@@ -1203,7 +1203,9 @@ class AviaryGroup(om.Group):
                                         static_target=True,
                                         units=base_units,
                                         shape=shape,
-                                        targets={phase_name: [targets] for phase_name in base_phases},
+                                        targets={
+                                            phase_name: [targets] for phase_name in base_phases
+                                        },
                                     )
 
                                     self.connect(
