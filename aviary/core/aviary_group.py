@@ -1152,7 +1152,6 @@ class AviaryGroup(om.Group):
             bus_variables = subsystem.get_pre_mission_bus_variables(self.aviary_inputs)
             if bus_variables is not None:
                 for bus_variable, variable_data in bus_variables.items():
-
                     if 'mission_name' in variable_data:
                         mission_var_names = variable_data['mission_name']
                         src_indices = variable_data.get('src_indices', None)
@@ -1223,7 +1222,6 @@ class AviaryGroup(om.Group):
                             post_mission_var_names = [post_mission_var_names]
 
                         for post_mission_var_name in post_mission_var_names:
-
                             self.connect(
                                 f'pre_mission.{bus_variable}',
                                 f'{post_mission_var_name}',
