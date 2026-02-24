@@ -1154,16 +1154,16 @@ class AviaryGroup(om.Group):
                 for bus_variable, variable_data in bus_variables.items():
 
                     if "mission_name" in variable_data:
-                        mission_variable_name = variable_data['mission_name']
+                        mission_var_names = variable_data['mission_name']
                         src_indices = variable_data.get('src_indices', None)
 
                         # check if mission_variable_name is a list
-                        if not isinstance(mission_variable_name, list):
-                            mission_variable_name = [mission_variable_name]
+                        if not isinstance(mission_var_names, list):
+                            mission_var_names = [mission_var_names]
 
                         # loop over the mission_variable_name list and add each variable to
                         # the trajectory
-                        for mission_var_name in mission_variable_name:
+                        for mission_var_name in mission_var_names:
                             if mission_var_name not in self.meta_data:
                                 # base_units = self.get_io_metadata(includes=f'pre_mission.{external_subsystem.name}.{bus_variable}')[f'pre_mission.{external_subsystem.name}.{bus_variable}']['units']
                                 base_units = variable_data['units']
@@ -1214,17 +1214,18 @@ class AviaryGroup(om.Group):
 
                     if 'post_mission_name' in variable_data:
                         # check if post_mission_variable_name is a list
-                        post_mission_var_name = variable_data['post_mission_name']
+                        post_mission_var_names = variable_data['post_mission_name']
                         src_indices = variable_data.get('src_indices', None)
 
-                        if '.' in post_mission_var_name:
-                            # Support for non-hierarchy variables as parameters.
-                            post_mission_var_name = post_mission_var_name.split('.')[-1]
+                        if not isinstance(post_mission_var_names, list):
+                            post_mission_var_names = [post_mission_var_names]
 
-                        if not isinstance(post_mission_var_name, list):
-                            post_mission_var_name = [post_mission_var_name]
+                        for post_mission_var_name in post_mission_var_names:
 
-                        for post_mission_var_name in post_mission_var_name:
+                            if '.' in post_mission_var_name:
+                                # Support for non-hierarchy variables as parameters.
+                                post_mission_var_name = post_mission_var_name.split('.')[-1]
+
                             self.connect(
                                 f'pre_mission.{subsystem.name}.{bus_variable}',
                                 f'{subsystem.name}.{post_mission_var_name}',
