@@ -69,13 +69,13 @@ class ReynoldsNumber(om.ExplicitComponent):
         nn = self.options['num_nodes']
 
         add_aviary_input(self, Dynamic.Atmosphere.DENSITY, shape=nn, units='lbm/ft**3')
-        
+
         add_aviary_input(self, Dynamic.Atmosphere.DYNAMIC_VISCOSITY, shape=nn, units='lbf*s/ft**2')
 
         add_aviary_input(self, Dynamic.Atmosphere.MACH, shape=nn, units='unitless')
 
         add_aviary_input(self, Dynamic.Atmosphere.SPEED_OF_SOUND, shape=nn, units='ft/s')
-        
+
         add_aviary_output(
             self, Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, shape=nn, units='1/ft'
         )
@@ -88,8 +88,8 @@ class ReynoldsNumber(om.ExplicitComponent):
         self.declare_partials(
             Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH,
             [
-                Dynamic.Atmosphere.DENSITY, 
-                Dynamic.Atmosphere.DYNAMIC_VISCOSITY, 
+                Dynamic.Atmosphere.DENSITY,
+                Dynamic.Atmosphere.DYNAMIC_VISCOSITY,
                 Dynamic.Atmosphere.MACH,
                 Dynamic.Atmosphere.SPEED_OF_SOUND,
             ],
@@ -116,15 +116,12 @@ class ReynoldsNumber(om.ExplicitComponent):
         partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.DENSITY] = (
             a * M / mu / GRAV_ENGLISH_FLOPS
         )
-
         partials[
             Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.DYNAMIC_VISCOSITY
-        ] = -a * M * rho / mu**2 / GRAV_ENGLISH_FLOPS     
-
+        ] = -a * M * rho / mu**2 / GRAV_ENGLISH_FLOPS
         partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.MACH] = (
             a * rho / mu / GRAV_ENGLISH_FLOPS
         )
-        
         partials[
             Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.SPEED_OF_SOUND
         ] = M * rho / mu / GRAV_ENGLISH_FLOPS
