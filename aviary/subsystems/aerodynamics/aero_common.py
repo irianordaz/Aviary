@@ -91,7 +91,7 @@ class ReynoldsNumber(om.ExplicitComponent):
                 Dynamic.Atmosphere.DENSITY, 
                 Dynamic.Atmosphere.DYNAMIC_VISCOSITY, 
                 Dynamic.Atmosphere.MACH,
-                Dynamic.Atmosphere.SPEED_OF_SOUND
+                Dynamic.Atmosphere.SPEED_OF_SOUND,
             ],
             rows=rows_cols,
             cols=rows_cols,
@@ -116,12 +116,12 @@ class ReynoldsNumber(om.ExplicitComponent):
         partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.DENSITY] = (
             a * M / mu / GRAV_ENGLISH_FLOPS
         )
-        partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.DYNAMIC_VISCOSITY] = (
-            -a * M * rho / mu**2 / GRAV_ENGLISH_FLOPS
-        )
+        partials[
+            Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.DYNAMIC_VISCOSITY
+        ] = -a * M * rho / mu**2 / GRAV_ENGLISH_FLOPS        
         partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.MACH] = (
             a * rho / mu / GRAV_ENGLISH_FLOPS
         )
-        partials[Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.SPEED_OF_SOUND] = (
-            M * rho / mu / GRAV_ENGLISH_FLOPS
-        )
+        partials[
+            Dynamic.Mission.REYNOLDS_NUMBER_PER_UNIT_LENGTH, Dynamic.Atmosphere.SPEED_OF_SOUND
+        ] = M * rho / mu / GRAV_ENGLISH_FLOPS
