@@ -368,10 +368,12 @@
         Aviary's standard engine model uses a single CSV performance deck across all
         flight phases. <strong>multi_fuel</strong> extends this with
         <code>MultiEngineTableBuilder</code>, which dispatches a different
-        <code>EngineDeck</code> for each named phase (climb, cruise, descent, …).
-        After the mission, per-engine fuel burn is summed and exposed as
-        <code>Mission.TOTAL_FUEL_MULTI</code> — an array whose length equals the
-        number of unique engine CSV files in the mapping.
+        <code>EngineDeck</code> for each named phase (climb, cruise, descent, …) and
+        tracks a fuel density per phase. After the mission, per-engine fuel burn is
+        summed and exposed as <code>Mission.TOTAL_FUEL_MULTI</code> (mass) and
+        <code>Mission.TOTAL_FUEL_VOLUME_MULTI</code> (volume) — arrays indexed by
+        unique <code>(csv, density)</code> pair, so the same CSV file used with two
+        different fuel densities produces two separate output entries.
       </p>
 
       <div class="callout info">
@@ -380,11 +382,12 @@
       </div>
 
       <div class="diagram">
-        <span class="d-phase">climb</span>   <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_28k.csv</span>  <span class="d-arrow">──┐</span><br>
-        <span class="d-phase">cruise</span>  <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span>  <span class="d-arrow">──┤</span>  <span class="d-sum">sum by unique CSV</span><br>
-        <span class="d-phase">descent</span> <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span>  <span class="d-arrow">──┘</span><br>
+        <span class="d-phase">climb</span>   <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_28k.csv</span> @ <span class="d-num">6.7</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[0]</span><br>
+        <span class="d-phase">cruise</span>  <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span> @ <span class="d-num">6.4</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[1]</span><br>
+        <span class="d-phase">descent</span> <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span> @ <span class="d-num">3.5</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[2]</span><br>
         <br>
-        <span class="d-out">Mission.TOTAL_FUEL_MULTI</span> <span class="d-arrow">=</span> <span class="d-num">[</span><span class="d-engine">fuel_28k</span><span class="d-num">,</span> <span class="d-engine">fuel_22k</span><span class="d-num">]</span>
+        <span class="d-out">Mission.TOTAL_FUEL_MULTI</span>        <span class="d-arrow">=</span> <span class="d-sum">[fuel_28k_JetA, fuel_22k_SAF, fuel_22k_LNG]</span>  <span class="cm">(lbm)</span><br>
+        <span class="d-out">Mission.TOTAL_FUEL_VOLUME_MULTI</span> <span class="d-arrow">=</span> <span class="d-sum">[vol_28k_JetA,  vol_22k_SAF,  vol_22k_LNG]</span>   <span class="cm">(galUS)</span>
       </div>
     </section>
 
@@ -434,8 +437,9 @@ engine = <span class="fn">EngineTableBuilder</span>(
       <h2>MultiEngineTableBuilder</h2>
       <p>
         Selects a different <code>EngineTableBuilder</code> CSV deck for each named
-        mission phase. All CSV files are pre-loaded at construction time. During the
-        mission, the correct deck is dispatched based on the phase name injected into
+        mission phase and tracks a fuel density per phase. All CSV files are
+        pre-loaded at construction time. During the mission, the correct deck is
+        dispatched based on the phase name injected into
         <code>subsystem_options</code> by <code>configure_phase_info</code>.
       </p>
 
@@ -460,10 +464,11 @@ engine = <span class="fn">EngineTableBuilder</span>(
             <td><code>phase_engine_map</code></td>
             <td><code>dict</code></td>
             <td>
-              Mapping of <em>phase name</em> → <em>CSV path</em>. Multiple phases may share
-              the same CSV; those phases are summed together in
-              <code>Mission.TOTAL_FUEL_MULTI</code>. Index order in the output array
-              follows first appearance of each unique CSV.
+              Mapping of <em>phase name</em> → <code>(csv_path, density_lbm_per_galUS)</code>
+              tuple, or a plain CSV path string (falls back to Aviary's default density,
+              6.7 lbm/galUS). Uniqueness in the output arrays is determined by
+              <code>(csv, density)</code> pair — the same CSV used with two different
+              densities produces two separate output entries.
             </td>
           </tr>
         </tbody>
@@ -479,9 +484,9 @@ engine = <span class="fn">EngineTableBuilder</span>(
 engine = <span class="fn">MultiEngineTableBuilder</span>(
     name=<span class="st">'multi_engine_table'</span>,
     phase_engine_map={
-        <span class="st">'climb'</span>:   <span class="st">'models/engines/turbofan_28k.csv'</span>,
-        <span class="st">'cruise'</span>:  <span class="st">'models/engines/turbofan_22k.csv'</span>,
-        <span class="st">'descent'</span>: <span class="st">'models/engines/turbofan_22k.csv'</span>,
+        <span class="st">'climb'</span>:   (<span class="st">'models/engines/turbofan_28k.csv'</span>, <span class="num">6.7</span>),  <span class="cm"># Jet-A</span>
+        <span class="st">'cruise'</span>:  (<span class="st">'models/engines/turbofan_22k.csv'</span>,  <span class="num">6.4</span>),  <span class="cm"># SAF blend</span>
+        <span class="st">'descent'</span>: (<span class="st">'models/engines/turbofan_22k.csv'</span>,  <span class="num">3.5</span>),  <span class="cm"># LNG</span>
     },
 )
 
@@ -498,7 +503,8 @@ prob.<span class="fn">build_model</span>()
 prob.<span class="fn">run_aviary_problem</span>()
 
 <span class="kw">from</span> aviary.variable_info.variables <span class="kw">import</span> Mission
-<span class="fn">print</span>(prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_MULTI, units=<span class="st">'lbm'</span>))</code></pre>
+<span class="fn">print</span>(prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_MULTI,        units=<span class="st">'lbm'</span>))
+<span class="fn">print</span>(prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_VOLUME_MULTI, units=<span class="st">'galUS'</span>))</code></pre>
 
       <h3 id="configure-phase-info">configure_phase_info</h3>
       <p>
@@ -513,38 +519,46 @@ prob.<span class="fn">run_aviary_problem</span>()
         be called before <code>AviaryProblem.load_inputs</code>.
       </div>
 
-      <h3 id="output-variable">Output variable: Mission.TOTAL_FUEL_MULTI</h3>
+      <h3 id="output-variable">Output variables</h3>
       <p>
-        After the mission runs, per-engine fuel burn is available via
-        <code>prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm')</code>.
-        Fuel burn for each phase is the change in gross mass from the start to the
-        end of that phase (<code>mass[t=0] − mass[t=final]</code>), then summed
-        across phases that share the same engine CSV.
+        After the mission runs, per-engine fuel burn is available as mass and volume.
+        Both arrays are indexed by unique <code>(csv, density)</code> pair in order
+        of first appearance. Fuel burn for each phase is the change in gross mass
+        from phase start to phase end (<code>mass[t=0] − mass[t=final]</code>).
+        Volume is mass divided by the phase's density.
       </p>
 
       <table>
         <thead>
-          <tr><th>Index</th><th>CSV (example)</th><th>Phases contributing</th></tr>
+          <tr><th>Index</th><th>CSV (example)</th><th>Density (lbm/galUS)</th><th>Phases contributing</th></tr>
         </thead>
         <tbody>
           <tr>
             <td><code>0</code></td>
             <td><code>turbofan_28k.csv</code></td>
+            <td>6.7</td>
             <td>climb</td>
           </tr>
           <tr>
             <td><code>1</code></td>
             <td><code>turbofan_22k.csv</code></td>
-            <td>cruise + descent</td>
+            <td>6.4</td>
+            <td>cruise</td>
+          </tr>
+          <tr>
+            <td><code>2</code></td>
+            <td><code>turbofan_22k.csv</code></td>
+            <td>3.5</td>
+            <td>descent</td>
           </tr>
         </tbody>
       </table>
 
       <div class="callout info">
-        The array length equals the number of <strong>unique</strong> CSV paths in
-        <code>phase_engine_map</code>, in order of first appearance.
-        <code>Mission.TOTAL_FUEL_MULTI</code> tracks only trajectory phases;
-        taxi and takeoff fuel (if modelled separately) are not included.
+        The array length equals the number of unique <strong>(csv, density)</strong>
+        pairs in <code>phase_engine_map</code>, in order of first appearance.
+        Trajectory phases only — taxi and takeoff fuel modelled separately are not
+        included.
       </div>
     </section>
 
@@ -570,19 +584,20 @@ prob.<span class="fn">run_aviary_problem</span>()
         <h3>aviary/variable_info/variable_meta_data.py</h3>
         <span class="tag green">additive</span>
         <p>
-          Added an <code>add_meta_data</code> entry for
-          <code>Mission.TOTAL_FUEL_MULTI</code>:
+          Added <code>add_meta_data</code> entries for both output variables:
         </p>
         <table>
-          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <thead><tr><th>Variable</th><th>Units</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td>units</td><td><code>lbm</code></td></tr>
-            <tr><td>default_value</td><td><code>0.0</code></td></tr>
             <tr>
-              <td>desc</td>
-              <td>Total fuel burned per unique engine table, ordered by first
-              appearance in <code>phase_engine_map</code>. Array length equals
-              the number of unique engine CSVs.</td>
+              <td><code>Mission.TOTAL_FUEL_MULTI</code></td>
+              <td><code>lbm</code></td>
+              <td>Fuel mass burned per unique <code>(csv, density)</code> pair, ordered by first appearance in <code>phase_engine_map</code>.</td>
+            </tr>
+            <tr>
+              <td><code>Mission.TOTAL_FUEL_VOLUME_MULTI</code></td>
+              <td><code>galUS</code></td>
+              <td>Fuel volume burned per unique <code>(csv, density)</code> pair, derived by dividing each mass entry by its phase density.</td>
             </tr>
           </tbody>
         </table>

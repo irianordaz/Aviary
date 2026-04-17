@@ -22,21 +22,19 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
     For each phase in ``phase_engine_map`` the component receives two scalar
     inputs (``mass_start_{phase}`` and ``mass_end_{phase}``) and computes the
     fuel burned as their difference.  Results are summed across phases that share
-    the same engine CSV.
+    the same ``(csv, density)`` entry.
 
     Outputs
     -------
     Mission.TOTAL_FUEL_MULTI : array, lbm
-        Fuel mass burned per unique engine CSV, ordered by first appearance in
-        ``phase_engine_map``.
+        Fuel mass burned per unique ``(csv, density)`` pair, ordered by first
+        appearance in ``phase_engine_map``.
     Mission.TOTAL_FUEL_VOLUME_MULTI : array, galUS
-        Fuel volume burned per unique engine CSV, derived by dividing each mass
-        entry by the corresponding ``Aircraft.Fuel.DENSITY`` override.
+        Fuel volume burned per unique ``(csv, density)`` pair.
     """
 
     def initialize(self):
         self.options.declare('phase_engine_map', recordable=False)
-        self.options.declare('csv_densities', recordable=False)
 
     def setup(self):
         phase_engine_map = self.options['phase_engine_map']
@@ -44,20 +42,19 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
             self.add_input(f'mass_start_{phase}', val=0.0, units='lbm')
             self.add_input(f'mass_end_{phase}', val=0.0, units='lbm')
 
-        unique_engines = list(dict.fromkeys(phase_engine_map.values()))
-        self._unique_engines = unique_engines
-        n = len(unique_engines)
+        unique_entries = list(dict.fromkeys(phase_engine_map.values()))
+        self._unique_entries = unique_entries
+        n = len(unique_entries)
         self.add_output(Mission.TOTAL_FUEL_MULTI, val=np.zeros(n), units='lbm')
         self.add_output(Mission.TOTAL_FUEL_VOLUME_MULTI, val=np.zeros(n), units='galUS')
 
     def setup_partials(self):
         phase_engine_map = self.options['phase_engine_map']
-        csv_densities = self.options['csv_densities']
-        unique_engines = self._unique_engines
+        unique_entries = self._unique_entries
 
-        for phase, csv in phase_engine_map.items():
-            idx = unique_engines.index(csv)
-            density = csv_densities[csv]
+        for phase, entry in phase_engine_map.items():
+            idx = unique_entries.index(entry)
+            density = entry[1]
 
             self.declare_partials(
                 Mission.TOTAL_FUEL_MULTI, f'mass_start_{phase}',
@@ -78,16 +75,15 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
 
     def compute(self, inputs, outputs):
         phase_engine_map = self.options['phase_engine_map']
-        csv_densities = self.options['csv_densities']
-        unique_engines = self._unique_engines
-        n = len(unique_engines)
+        unique_entries = self._unique_entries
+        n = len(unique_entries)
         mass_totals = np.zeros(n)
 
-        for phase, csv in phase_engine_map.items():
+        for phase, entry in phase_engine_map.items():
             fuel = inputs[f'mass_start_{phase}'].flat[0] - inputs[f'mass_end_{phase}'].flat[0]
-            mass_totals[unique_engines.index(csv)] += fuel
+            mass_totals[unique_entries.index(entry)] += fuel
 
-        densities = np.array([csv_densities[csv] for csv in unique_engines])
+        densities = np.array([entry[1] for entry in unique_entries])
         outputs[Mission.TOTAL_FUEL_MULTI] = mass_totals
         outputs[Mission.TOTAL_FUEL_VOLUME_MULTI] = mass_totals / densities
 
@@ -123,7 +119,7 @@ class EngineTableBuilder(EngineDeck):
 class MultiEngineTableBuilder(EngineModel):
     """
     Engine builder that uses a different CSV engine deck for each mission phase,
-    with optional per-engine fuel density overrides.
+    with an optional per-phase fuel density.
 
     Parameters
     ----------
@@ -131,17 +127,11 @@ class MultiEngineTableBuilder(EngineModel):
         Label for this engine model. Also used as the subsystem key when looking up
         per-phase options in phase_info's subsystem_options.
     phase_engine_map : dict
-        Mapping of phase name to engine CSV path, e.g.
-        ``{'climb': 'models/engines/engine1.csv', 'cruise': 'models/engines/engine2.csv'}``.
-        Paths may be Aviary-relative or absolute.
-    fuel_density_map : dict, optional
-        Mapping of engine CSV path to fuel density in lbm/galUS, e.g.
-        ``{'models/engines/engine1.csv': 6.7, 'models/engines/engine2.csv': 6.0}``.
-        Keys must match values in ``phase_engine_map``. CSVs not present in this
-        dict fall back to Aviary's default (``Aircraft.Fuel.DENSITY`` default,
-        currently 6.7 lbm/galUS). The density is set on each engine table's
-        ``AviaryValues`` options as ``Aircraft.Fuel.DENSITY`` and is used to
-        compute ``Mission.TOTAL_FUEL_VOLUME_MULTI`` after the mission.
+        Mapping of phase name to either a CSV path string or a
+        ``(csv_path, density_lbm_per_galUS)`` tuple.  Using tuples allows the same
+        engine CSV to carry a different fuel density in different phases.  Paths may
+        be Aviary-relative or absolute.  String values fall back to Aviary's default
+        fuel density (``Aircraft.Fuel.DENSITY``, currently 6.7 lbm/galUS).
 
     Usage
     -----
@@ -150,13 +140,9 @@ class MultiEngineTableBuilder(EngineModel):
 
         engine = MultiEngineTableBuilder(
             phase_engine_map={
-                'climb':   'models/engines/turbofan_28k.csv',
-                'cruise':  'models/engines/turbofan_22k.csv',
-                'descent': 'models/engines/turbofan_22k.csv',
-            },
-            fuel_density_map={
-                'models/engines/turbofan_28k.csv': 6.7,   # Jet-A
-                'models/engines/turbofan_22k.csv': 6.0,   # SAF blend
+                'climb':   ('models/engines/turbofan_28k.csv', 6.7),   # Jet-A
+                'cruise':  ('models/engines/turbofan_22k.csv', 6.5),   # SAF blend
+                'descent': ('models/engines/turbofan_22k.csv', 6.5),
             },
         )
         local_phase_info = engine.configure_phase_info(deepcopy(phase_info))
@@ -170,24 +156,25 @@ class MultiEngineTableBuilder(EngineModel):
         self,
         name: str = 'multi_engine_table',
         phase_engine_map: dict = None,
-        fuel_density_map: dict = None,
     ):
         super().__init__(name=name)
-        self.phase_engine_map = phase_engine_map or {}
 
-        # Build a per-unique-CSV density lookup, falling back to the Aviary default.
-        unique_csvs = list(dict.fromkeys(self.phase_engine_map.values()))
-        raw = fuel_density_map or {}
-        self._csv_densities = {
-            csv: raw.get(csv, _DEFAULT_FUEL_DENSITY_LBM_GAL) for csv in unique_csvs
-        }
+        # Normalize values to (csv, density) tuples.
+        raw_map = phase_engine_map or {}
+        self.phase_engine_map = {}
+        for phase, val in raw_map.items():
+            if isinstance(val, str):
+                self.phase_engine_map[phase] = (val, _DEFAULT_FUEL_DENSITY_LBM_GAL)
+            else:
+                csv, density = val
+                self.phase_engine_map[phase] = (csv, density)
 
         # Pre-create one EngineTableBuilder per phase; set Aircraft.Fuel.DENSITY
         # on each engine's options so downstream sizing code sees the right value.
         self._phase_engines = {}
-        for phase, csv in self.phase_engine_map.items():
+        for phase, (csv, density) in self.phase_engine_map.items():
             opts = AviaryValues()
-            opts.set_val(Aircraft.Fuel.DENSITY, self._csv_densities[csv], 'lbm/galUS')
+            opts.set_val(Aircraft.Fuel.DENSITY, density, 'lbm/galUS')
             self._phase_engines[phase] = EngineTableBuilder(
                 name=f'{name}_{phase}', csv_path=csv, options=opts
             )
@@ -240,7 +227,6 @@ class MultiEngineTableBuilder(EngineModel):
             return None
         return MultiEngineFuelBurnComp(
             phase_engine_map=self.phase_engine_map,
-            csv_densities=self._csv_densities,
         )
 
     def get_traj_connections(self, regular_phases):

@@ -22,14 +22,9 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = MultiEngineTableBuilder(
     phase_engine_map={
-        'climb': 'models/engines/turbofan_28k.csv',
-        'cruise': 'models/engines/turbofan_22k.csv',
-        'descent': 'models/engines/turbofan_22k.csv',
-    },
-    fuel_density_map={
-        'models/engines/turbofan_28k.csv': 6.7,  # Jet-A
-        'models/engines/turbofan_22k.csv': 6.4,  # SAF blend
-        'models/engines/turbofan_22k.csv': 3.5,  # LNG
+        'climb':   ('models/engines/turbofan_28k.csv', 6.7),  # Jet-A
+        'cruise':  ('models/engines/turbofan_22k.csv', 6.4),  # SAF blend
+        'descent': ('models/engines/turbofan_22k.csv', 3.5),  # LNG
     },
 )
 phase_info = engine.configure_phase_info(phase_info)

@@ -32,7 +32,7 @@ Accepts both Aviary-relative paths (resolved via `get_path`) and absolute paths.
 
 ### `MultiEngineTableBuilder`
 
-Selects a different `EngineTableBuilder` CSV deck for each named mission phase. All CSV files are pre-loaded at construction time. During the mission, the correct deck is dispatched based on the phase name injected into `subsystem_options` by `configure_phase_info`.
+Selects a different `EngineTableBuilder` CSV deck for each named mission phase and tracks a fuel density per phase. All CSV files are pre-loaded at construction time. During the mission, the correct deck is dispatched based on the phase name injected into `subsystem_options` by `configure_phase_info`.
 
 #### Constructor
 
@@ -44,7 +44,7 @@ MultiEngineTableBuilder(
 ```
 
 - **`name`** — subsystem label; must be unique among all external subsystems passed to `load_external_subsystems`.
-- **`phase_engine_map`** — mapping of phase name → CSV path. Multiple phases may share the same CSV; phases that share a CSV are summed together in `Mission.TOTAL_FUEL_MULTI`. The order of first appearance determines the index order in that output array.
+- **`phase_engine_map`** — mapping of phase name → `(csv_path, density_lbm_per_galUS)` tuple, or a plain CSV path string (falls back to Aviary's default density, 6.7 lbm/galUS). Using tuples allows the same engine CSV to carry a different fuel density in different phases. Uniqueness in the output array is determined by `(csv, density)` pair, so the same CSV with two different densities produces two separate output entries.
 
 #### Usage
 
@@ -57,9 +57,9 @@ from multi_fuel.table_builder import MultiEngineTableBuilder
 engine = MultiEngineTableBuilder(
     name='multi_engine_table',
     phase_engine_map={
-        'climb':   'models/engines/turbofan_28k.csv',
-        'cruise':  'models/engines/turbofan_22k.csv',
-        'descent': 'models/engines/turbofan_22k.csv',
+        'climb':   ('models/engines/turbofan_28k.csv', 6.7),  # Jet-A
+        'cruise':  ('models/engines/turbofan_22k.csv', 6.4),  # SAF blend
+        'descent': ('models/engines/turbofan_22k.csv', 3.5),  # LNG
     },
 )
 
@@ -75,26 +75,26 @@ prob.build_model()
 # ... add driver, design variables, objective, setup, run ...
 ```
 
-#### Output variable: `Mission.TOTAL_FUEL_MULTI`
+#### Output variables
 
 After the mission runs, per-engine fuel burn is available via:
 
 ```python
 from aviary.variable_info.variables import Mission
 
-fuel_per_engine = prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm')
-# fuel_per_engine[0] → total fuel burned by the first unique CSV in phase_engine_map
-# fuel_per_engine[1] → total fuel burned by the second unique CSV, etc.
+fuel_mass   = prob.get_val(Mission.TOTAL_FUEL_MULTI,        units='lbm')
+fuel_volume = prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI, units='galUS')
 ```
 
-The array length equals the number of **unique** CSV paths in `phase_engine_map`, ordered by first appearance. In the example above:
+Both arrays are indexed by unique `(csv, density)` pair, in order of first appearance. In the example above:
 
-| Index | CSV | Phases contributing |
-|-------|-----|---------------------|
-| 0 | `turbofan_28k.csv` | climb |
-| 1 | `turbofan_22k.csv` | cruise + descent |
+| Index | CSV | Density (lbm/galUS) | Phases contributing |
+|-------|-----|---------------------|---------------------|
+| 0 | `turbofan_28k.csv` | 6.7 | climb |
+| 1 | `turbofan_22k.csv` | 6.4 | cruise |
+| 2 | `turbofan_22k.csv` | 3.5 | descent |
 
-Fuel burn for each phase is computed as the change in gross mass from the start to the end of that phase (`mass[t=0] − mass[t=final]`), then summed across phases that share the same engine CSV.
+Because cruise and descent use the same CSV but different densities, they appear as separate entries. Fuel burn for each phase is the change in gross mass from phase start to phase end (`mass[t=0] − mass[t=final]`). Volume is derived by dividing each mass entry by its corresponding density.
 
 #### `configure_phase_info(phase_info, propulsion_name='propulsion')`
 
@@ -112,10 +112,12 @@ Added `Mission.TOTAL_FUEL_MULTI = 'mission:total_fuel_multi'` to the `Mission` c
 
 ### `aviary/variable_info/variable_meta_data.py`
 
-Added an `add_meta_data` entry for `Mission.TOTAL_FUEL_MULTI`:
+Added `add_meta_data` entries for both output variables:
 
-- **units**: `lbm`
-- **description**: total fuel burned per unique engine table, ordered by first appearance in `phase_engine_map`. Array length equals the number of unique engine CSVs.
+| Variable | Units | Description |
+|----------|-------|-------------|
+| `Mission.TOTAL_FUEL_MULTI` | `lbm` | Fuel mass burned per unique `(csv, density)` pair, ordered by first appearance in `phase_engine_map`. |
+| `Mission.TOTAL_FUEL_VOLUME_MULTI` | `galUS` | Fuel volume burned per unique `(csv, density)` pair, derived by dividing each mass entry by its phase density. |
 
 ### `aviary/subsystems/propulsion/engine_model.py`
 
