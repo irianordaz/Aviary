@@ -169,3 +169,7 @@ output_list.txt
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+*.db-journal
+*_out
+.DS_Store

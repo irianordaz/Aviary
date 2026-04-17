@@ -1,4 +1,4 @@
-# multi_fuel
+# Phase-Based Multi-Fuel Capability
 
 Extensions to [Aviary](https://github.com/OpenMDAO/Aviary) that allow a different CSV engine deck to be used for each mission phase, and that report per-engine-table total fuel burn as an output variable.
 

@@ -1,482 +1,628 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>multi_fuel — Aviary Multi-Engine Extension</title>
-  <style>
-    :root {
-      --bg:        #0f1117;
-      --surface:   #1a1d27;
-      --border:    #2a2d3a;
-      --accent:    #4f8ef7;
-      --accent2:   #a78bfa;
-      --text:      #e2e8f0;
-      --muted:     #8892a4;
-      --code-bg:   #111827;
-      --code-text: #c9d1e0;
-      --tag-green: #22c55e;
-      --tag-blue:  #38bdf8;
-      --tag-purple:#a78bfa;
-    }
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>multi_fuel — Aviary Phase-Based Multi-Fuel Extension</title>
+        <style>
+            :root {
+                --bg: #0f1117;
+                --surface: #1a1d27;
+                --border: #2a2d3a;
+                --accent: #4f8ef7;
+                --accent2: #a78bfa;
+                --text: #e2e8f0;
+                --muted: #8892a4;
+                --code-bg: #111827;
+                --code-text: #c9d1e0;
+                --tag-green: #22c55e;
+                --tag-blue: #38bdf8;
+                --tag-purple: #a78bfa;
+            }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 15px;
-      line-height: 1.7;
-    }
+            body {
+                background: var(--bg);
+                color: var(--text);
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                font-size: 20px;
+                line-height: 1.7;
+            }
 
-    /* ── Layout ────────────────────────────────────────────── */
-    .layout {
-      display: grid;
-      grid-template-columns: 240px 1fr;
-      min-height: 100vh;
-    }
+            /* ── Layout ────────────────────────────────────────────── */
+            .layout {
+                display: grid;
+                grid-template-columns: 240px 1fr;
+                min-height: 100vh;
+            }
 
-    /* ── Sidebar ────────────────────────────────────────────── */
-    nav {
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      padding: 2rem 1.25rem;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      overflow-y: auto;
-    }
+            /* ── Sidebar ────────────────────────────────────────────── */
+            nav {
+                background: var(--surface);
+                border-right: 1px solid var(--border);
+                padding: 2rem 1.25rem;
+                position: sticky;
+                top: 0;
+                height: 100vh;
+                overflow-y: auto;
+            }
 
-    .nav-logo {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: .03em;
-      margin-bottom: 2rem;
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-    }
+            .nav-logo {
+                font-size: 1rem;
+                font-weight: 700;
+                color: var(--accent);
+                letter-spacing: 0.03em;
+                margin-bottom: 2rem;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
 
-    .nav-logo span { color: var(--muted); font-weight: 400; }
+            .nav-logo span {
+                color: var(--muted);
+                font-weight: 400;
+            }
 
-    nav ul { list-style: none; }
+            nav ul {
+                list-style: none;
+            }
 
-    nav li { margin-bottom: .15rem; }
+            nav li {
+                margin-bottom: 0.15rem;
+            }
 
-    nav a {
-      display: block;
-      padding: .35rem .6rem;
-      color: var(--muted);
-      text-decoration: none;
-      border-radius: 6px;
-      font-size: .88rem;
-      transition: background .15s, color .15s;
-    }
+            nav a {
+                display: block;
+                padding: 0.35rem 0.6rem;
+                color: var(--muted);
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 1rem;
+                transition:
+                    background 0.15s,
+                    color 0.15s;
+            }
 
-    nav a:hover, nav a.active {
-      background: rgba(79,142,247,.12);
-      color: var(--accent);
-    }
+            nav a:hover,
+            nav a.active {
+                background: rgba(79, 142, 247, 0.12);
+                color: var(--accent);
+            }
 
-    .nav-section {
-      font-size: .72rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--muted);
-      margin: 1.4rem 0 .4rem .6rem;
-    }
+            .nav-section {
+                font-size: 0.82rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--muted);
+                margin: 1.4rem 0 0.4rem 0.6rem;
+            }
 
-    nav a.sub { padding-left: 1.2rem; }
+            nav a.sub {
+                padding-left: 1.2rem;
+            }
 
-    /* ── Main ───────────────────────────────────────────────── */
-    main {
-      padding: 3rem 3.5rem;
-      max-width: 900px;
-    }
+            /* ── Main ───────────────────────────────────────────────── */
+            main {
+                padding: 3rem 3.5rem;
+                max-width: 900px;
+            }
 
-    /* ── Hero ───────────────────────────────────────────────── */
-    .hero {
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 2.5rem;
-      margin-bottom: 3rem;
-    }
+            /* ── Hero ───────────────────────────────────────────────── */
+            .hero {
+                border-bottom: 1px solid var(--border);
+                padding-bottom: 2.5rem;
+                margin-bottom: 3rem;
+            }
 
-    .hero-eyebrow {
-      font-size: .8rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: var(--accent);
-      margin-bottom: .6rem;
-    }
+            .hero-eyebrow {
+                font-size: 0.92rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: var(--accent);
+                margin-bottom: 0.6rem;
+            }
 
-    h1 {
-      font-size: 2.4rem;
-      font-weight: 800;
-      letter-spacing: -.02em;
-      line-height: 1.15;
-      margin-bottom: 1rem;
-    }
+            h1 {
+                font-size: 2.75rem;
+                font-weight: 800;
+                letter-spacing: -0.02em;
+                line-height: 1.15;
+                margin-bottom: 1rem;
+            }
 
-    .hero p {
-      color: var(--muted);
-      font-size: 1.05rem;
-      max-width: 600px;
-    }
+            .hero p {
+                color: var(--muted);
+                font-size: 1.2rem;
+                max-width: 600px;
+            }
 
-    /* ── Sections ───────────────────────────────────────────── */
-    section { margin-bottom: 3.5rem; }
+            /* ── Sections ───────────────────────────────────────────── */
+            section {
+                margin-bottom: 3.5rem;
+            }
 
-    h2 {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 1rem;
-      padding-bottom: .5rem;
-      border-bottom: 1px solid var(--border);
-    }
+            h2 {
+                font-size: 1.5rem;
+                font-weight: 700;
+                color: var(--text);
+                margin-bottom: 1rem;
+                padding-bottom: 0.5rem;
+                border-bottom: 1px solid var(--border);
+            }
 
-    h3 {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--accent2);
-      margin: 1.8rem 0 .6rem;
-    }
+            h3 {
+                font-size: 1.15rem;
+                font-weight: 700;
+                color: var(--accent2);
+                margin: 1.8rem 0 0.6rem;
+            }
 
-    h4 {
-      font-size: .9rem;
-      font-weight: 600;
-      color: var(--muted);
-      margin: 1.4rem 0 .4rem;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-    }
+            h4 {
+                font-size: 1.05rem;
+                font-weight: 600;
+                color: var(--muted);
+                margin: 1.4rem 0 0.4rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
 
-    p { margin-bottom: .8rem; color: var(--text); }
+            p {
+                margin-bottom: 0.8rem;
+                color: var(--text);
+            }
 
-    /* ── Code ───────────────────────────────────────────────── */
-    code {
-      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-      font-size: .85em;
-      background: var(--code-bg);
-      color: #93c5fd;
-      padding: .15em .4em;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-    }
+            /* ── Code ───────────────────────────────────────────────── */
+            code {
+                font-family:
+                    "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+                font-size: 0.95em;
+                background: var(--code-bg);
+                color: #93c5fd;
+                padding: 0.15em 0.4em;
+                border-radius: 4px;
+                border: 1px solid var(--border);
+            }
 
-    pre {
-      background: var(--code-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1.25rem 1.5rem;
-      overflow-x: auto;
-      margin: .8rem 0 1.2rem;
-      position: relative;
-    }
+            pre {
+                background: var(--code-bg);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 1.25rem 1.5rem;
+                overflow-x: auto;
+                margin: 0.8rem 0 1.2rem;
+                position: relative;
+            }
 
-    pre code {
-      background: none;
-      border: none;
-      padding: 0;
-      color: var(--code-text);
-      font-size: .85rem;
-      line-height: 1.65;
-    }
+            pre code {
+                background: none;
+                border: none;
+                padding: 0;
+                color: var(--code-text);
+                font-size: 1rem;
+                line-height: 1.65;
+            }
 
-    .code-label {
-      font-size: .7rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--muted);
-      margin-bottom: .4rem;
-    }
+            .code-label {
+                font-size: 0.82rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--muted);
+                margin-bottom: 0.4rem;
+            }
 
-    /* syntax colouring via spans */
-    .kw  { color: #c084fc; }
-    .fn  { color: #60a5fa; }
-    .st  { color: #86efac; }
-    .cm  { color: #475569; font-style: italic; }
-    .num { color: #f9a8d4; }
+            /* syntax colouring via spans */
+            .kw {
+                color: #c084fc;
+            }
+            .fn {
+                color: #60a5fa;
+            }
+            .st {
+                color: #86efac;
+            }
+            .cm {
+                color: #475569;
+                font-style: italic;
+            }
+            .num {
+                color: #f9a8d4;
+            }
 
-    /* ── Tables ─────────────────────────────────────────────── */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: .88rem;
-      margin: .8rem 0 1.4rem;
-    }
+            /* ── Tables ─────────────────────────────────────────────── */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 1rem;
+                margin: 0.8rem 0 1.4rem;
+            }
 
-    th {
-      text-align: left;
-      padding: .5rem .75rem;
-      background: var(--surface);
-      color: var(--muted);
-      font-weight: 600;
-      font-size: .78rem;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      border-bottom: 1px solid var(--border);
-    }
+            th {
+                text-align: left;
+                padding: 0.5rem 0.75rem;
+                background: var(--surface);
+                color: var(--muted);
+                font-weight: 600;
+                font-size: 0.9rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                border-bottom: 1px solid var(--border);
+            }
 
-    td {
-      padding: .55rem .75rem;
-      border-bottom: 1px solid var(--border);
-      color: var(--text);
-      vertical-align: top;
-    }
+            td {
+                padding: 0.55rem 0.75rem;
+                border-bottom: 1px solid var(--border);
+                color: var(--text);
+                vertical-align: top;
+            }
 
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,.02); }
+            tr:last-child td {
+                border-bottom: none;
+            }
+            tr:hover td {
+                background: rgba(255, 255, 255, 0.02);
+            }
 
-    /* ── Callouts ───────────────────────────────────────────── */
-    .callout {
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      margin: 1rem 0 1.4rem;
-      border-left: 3px solid;
-      font-size: .92rem;
-    }
+            /* ── Callouts ───────────────────────────────────────────── */
+            .callout {
+                border-radius: 8px;
+                padding: 1rem 1.25rem;
+                margin: 1rem 0 1.4rem;
+                border-left: 3px solid;
+                font-size: 1.05rem;
+            }
 
-    .callout.info {
-      background: rgba(79,142,247,.08);
-      border-color: var(--accent);
-      color: #93c5fd;
-    }
+            .callout.info {
+                background: rgba(79, 142, 247, 0.08);
+                border-color: var(--accent);
+                color: #93c5fd;
+            }
 
-    .callout.note {
-      background: rgba(167,139,250,.08);
-      border-color: var(--accent2);
-      color: #c4b5fd;
-    }
+            .callout.note {
+                background: rgba(167, 139, 250, 0.08);
+                border-color: var(--accent2);
+                color: #c4b5fd;
+            }
 
-    .callout strong { font-weight: 700; }
+            .callout strong {
+                font-weight: 700;
+            }
 
-    /* ── Tags ───────────────────────────────────────────────── */
-    .tag {
-      display: inline-block;
-      font-size: .72rem;
-      font-weight: 600;
-      padding: .2em .55em;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin-right: .3rem;
-    }
+            /* ── Tags ───────────────────────────────────────────────── */
+            .tag {
+                display: inline-block;
+                font-size: 0.82rem;
+                font-weight: 600;
+                padding: 0.2em 0.55em;
+                border-radius: 4px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-right: 0.3rem;
+            }
 
-    .tag.green  { background: rgba(34,197,94,.15);  color: var(--tag-green); }
-    .tag.blue   { background: rgba(56,189,248,.15); color: var(--tag-blue); }
-    .tag.purple { background: rgba(167,139,250,.15);color: var(--tag-purple); }
+            .tag.green {
+                background: rgba(34, 197, 94, 0.15);
+                color: var(--tag-green);
+            }
+            .tag.blue {
+                background: rgba(56, 189, 248, 0.15);
+                color: var(--tag-blue);
+            }
+            .tag.purple {
+                background: rgba(167, 139, 250, 0.15);
+                color: var(--tag-purple);
+            }
 
-    /* ── File list ──────────────────────────────────────────── */
-    .file-list { list-style: none; margin: .6rem 0 1.2rem; }
+            /* ── File list ──────────────────────────────────────────── */
+            .file-list {
+                list-style: none;
+                margin: 0.6rem 0 1.2rem;
+            }
 
-    .file-list li {
-      display: flex;
-      align-items: baseline;
-      gap: .75rem;
-      padding: .45rem 0;
-      border-bottom: 1px solid var(--border);
-      font-size: .9rem;
-    }
+            .file-list li {
+                display: flex;
+                align-items: baseline;
+                gap: 0.75rem;
+                padding: 0.45rem 0;
+                border-bottom: 1px solid var(--border);
+                font-size: 1.05rem;
+            }
 
-    .file-list li:last-child { border-bottom: none; }
+            .file-list li:last-child {
+                border-bottom: none;
+            }
 
-    .file-name { color: #93c5fd; font-family: monospace; flex-shrink: 0; }
-    .file-desc { color: var(--muted); }
+            .file-name {
+                color: #93c5fd;
+                font-family: monospace;
+                flex-shrink: 0;
+            }
+            .file-desc {
+                color: var(--muted);
+            }
 
-    /* ── Change list ────────────────────────────────────────── */
-    .change-item {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1.1rem 1.3rem;
-      margin-bottom: 1rem;
-    }
+            /* ── Change list ────────────────────────────────────────── */
+            .change-item {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 1.1rem 1.3rem;
+                margin-bottom: 1rem;
+            }
 
-    .change-item h3 { margin-top: 0; }
-    .change-item p  { color: var(--muted); font-size: .9rem; margin-bottom: .5rem; }
-    .change-item p:last-child { margin-bottom: 0; }
+            .change-item h3 {
+                margin-top: 0;
+            }
+            .change-item p {
+                color: var(--muted);
+                font-size: 1.05rem;
+                margin-bottom: 0.5rem;
+            }
+            .change-item p:last-child {
+                margin-bottom: 0;
+            }
 
-    /* ── Output diagram ─────────────────────────────────────── */
-    .diagram {
-      background: var(--code-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1.25rem 1.5rem;
-      font-family: monospace;
-      font-size: .85rem;
-      color: var(--code-text);
-      line-height: 1.8;
-      margin: .8rem 0 1.2rem;
-    }
+            /* ── Output diagram ─────────────────────────────────────── */
+            .diagram {
+                background: var(--code-bg);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 1.25rem 1.5rem;
+                font-family: monospace;
+                font-size: 1rem;
+                color: var(--code-text);
+                line-height: 1.8;
+                margin: 0.8rem 0 1.2rem;
+            }
 
-    .d-phase  { color: #60a5fa; }
-    .d-engine { color: #86efac; }
-    .d-arrow  { color: #475569; }
-    .d-out    { color: #f9a8d4; }
-    .d-sum    { color: #c084fc; }
-  </style>
-</head>
-<body>
-<div class="layout">
+            .d-phase {
+                color: #60a5fa;
+            }
+            .d-engine {
+                color: #86efac;
+            }
+            .d-arrow {
+                color: #475569;
+            }
+            .d-out {
+                color: #f9a8d4;
+            }
+            .d-sum {
+                color: #c084fc;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="layout">
+            <!-- ── Sidebar ── -->
+            <nav>
+                <div class="nav-logo">
+                    Phase-Based Multi-Fuel Capability<span>/ docs</span>
+                </div>
+                <ul>
+                    <li><a href="#overview" class="active">Overview</a></li>
+                    <li><a href="#contents">Contents</a></li>
 
-  <!-- ── Sidebar ── -->
-  <nav>
-    <div class="nav-logo">multi_fuel <span>/ docs</span></div>
-    <ul>
-      <li><a href="#overview" class="active">Overview</a></li>
-      <li><a href="#contents">Contents</a></li>
+                    <li class="nav-section">Classes</li>
+                    <li>
+                        <a href="#engine-table-builder">EngineTableBuilder</a>
+                    </li>
+                    <li>
+                        <a href="#multi-engine-table-builder"
+                            >MultiEngineTableBuilder</a
+                        >
+                    </li>
+                    <li><a href="#constructor" class="sub">Constructor</a></li>
+                    <li><a href="#usage" class="sub">Usage</a></li>
+                    <li>
+                        <a href="#configure-phase-info" class="sub"
+                            >configure_phase_info</a
+                        >
+                    </li>
+                    <li>
+                        <a href="#output-variable" class="sub"
+                            >Output variable</a
+                        >
+                    </li>
 
-      <li class="nav-section">Classes</li>
-      <li><a href="#engine-table-builder">EngineTableBuilder</a></li>
-      <li><a href="#multi-engine-table-builder">MultiEngineTableBuilder</a></li>
-      <li><a href="#constructor" class="sub">Constructor</a></li>
-      <li><a href="#usage" class="sub">Usage</a></li>
-      <li><a href="#configure-phase-info" class="sub">configure_phase_info</a></li>
-      <li><a href="#output-variable" class="sub">Output variable</a></li>
+                    <li class="nav-section">Aviary Changes</li>
+                    <li><a href="#variables">variables.py</a></li>
+                    <li><a href="#meta-data">variable_meta_data.py</a></li>
+                    <li><a href="#engine-model">engine_model.py</a></li>
+                    <li><a href="#aviary-group">aviary_group.py</a></li>
+                </ul>
+            </nav>
 
-      <li class="nav-section">Aviary Changes</li>
-      <li><a href="#variables">variables.py</a></li>
-      <li><a href="#meta-data">variable_meta_data.py</a></li>
-      <li><a href="#engine-model">engine_model.py</a></li>
-      <li><a href="#aviary-group">aviary_group.py</a></li>
-    </ul>
-  </nav>
+            <!-- ── Main ── -->
+            <main>
+                <!-- Hero -->
+                <div class="hero">
+                    <div class="hero-eyebrow">Aviary Extension</div>
+                    <h1>Phase-Based Multi-Fuel Capability</h1>
+                    <p>
+                        Use a different CSV engine deck for each mission phase
+                        and retrieve per-engine total fuel burn as an OpenMDAO
+                        output variable.
+                    </p>
+                </div>
 
-  <!-- ── Main ── -->
-  <main>
+                <!-- Overview -->
+                <section id="overview">
+                    <h2>Overview</h2>
+                    <p>
+                        Aviary's standard engine model uses a single CSV
+                        performance deck across all flight phases. The
+                        <strong>multi_fuel</strong> builder extends this with
+                        <code>MultiEngineTableBuilder</code>, which dispatches a
+                        different <code>EngineDeck</code> for each named phase
+                        (climb, cruise, descent, …) and tracks a fuel density
+                        per phase. After the mission, per-engine fuel burn is
+                        summed and exposed as
+                        <code>Mission.TOTAL_FUEL_MULTI</code> (mass) and
+                        <code>Mission.TOTAL_FUEL_VOLUME_MULTI</code> (volume) —
+                        arrays indexed by unique
+                        <code>(csv, density)</code> pair, so the same CSV file
+                        used with two different fuel densities produces two
+                        separate output entries.
+                    </p>
 
-    <!-- Hero -->
-    <div class="hero">
-      <div class="hero-eyebrow">Aviary Extension</div>
-      <h1>multi_fuel</h1>
-      <p>
-        Use a different CSV engine deck for each mission phase and retrieve
-        per-engine total fuel burn as an OpenMDAO output variable.
-      </p>
-    </div>
+                    <div class="callout info">
+                        <strong>Additive only.</strong> All changes to Aviary
+                        are additive. Existing engine models and mission setups
+                        are not affected.
+                    </div>
 
-    <!-- Overview -->
-    <section id="overview">
-      <h2>Overview</h2>
-      <p>
-        Aviary's standard engine model uses a single CSV performance deck across all
-        flight phases. <strong>multi_fuel</strong> extends this with
-        <code>MultiEngineTableBuilder</code>, which dispatches a different
-        <code>EngineDeck</code> for each named phase (climb, cruise, descent, …) and
-        tracks a fuel density per phase. After the mission, per-engine fuel burn is
-        summed and exposed as <code>Mission.TOTAL_FUEL_MULTI</code> (mass) and
-        <code>Mission.TOTAL_FUEL_VOLUME_MULTI</code> (volume) — arrays indexed by
-        unique <code>(csv, density)</code> pair, so the same CSV file used with two
-        different fuel densities produces two separate output entries.
-      </p>
+                    <div class="diagram">
+                        <span class="d-phase">climb</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-engine">turbofan_28k.csv</span> @
+                        <span class="d-num">6.7</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-out">[0]</span><br />
+                        <span class="d-phase">cruise</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-engine">turbofan_22k.csv</span> @
+                        <span class="d-num">6.4</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-out">[1]</span><br />
+                        <span class="d-phase">descent</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-engine">turbofan_22k.csv</span> @
+                        <span class="d-num">3.5</span>
+                        <span class="d-arrow">──&gt;</span>
+                        <span class="d-out">[2]</span><br />
+                        <br />
+                        <span class="d-out">Mission.TOTAL_FUEL_MULTI</span>
+                        <span class="d-arrow">=</span>
+                        <span class="d-sum"
+                            >[fuel_28k_JetA, fuel_22k_SAF, fuel_22k_LNG]</span
+                        >
+                        <span class="cm">(lbm)</span><br />
+                        <span class="d-out"
+                            >Mission.TOTAL_FUEL_VOLUME_MULTI</span
+                        >
+                        <span class="d-arrow">=</span>
+                        <span class="d-sum"
+                            >[vol_28k_JetA, vol_22k_SAF, vol_22k_LNG]</span
+                        >
+                        <span class="cm">(galUS)</span>
+                    </div>
+                </section>
 
-      <div class="callout info">
-        <strong>Additive only.</strong> All changes to Aviary are additive.
-        Existing engine models and mission setups are not affected.
-      </div>
+                <!-- Contents -->
+                <section id="contents">
+                    <h2>Contents</h2>
+                    <ul class="file-list">
+                        <li>
+                            <span class="file-name">table_builder.py</span>
+                            <span class="file-desc">
+                                <code>EngineTableBuilder</code>,
+                                <code>MultiEngineTableBuilder</code>,
+                                <code>MultiEngineFuelBurnComp</code>
+                            </span>
+                        </li>
+                        <li>
+                            <span class="file-name">run_single_aisle.py</span>
+                            <span class="file-desc">
+                                Example: LSA-2 aircraft with two engine tables
+                                across three phases
+                            </span>
+                        </li>
+                    </ul>
+                </section>
 
-      <div class="diagram">
-        <span class="d-phase">climb</span>   <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_28k.csv</span> @ <span class="d-num">6.7</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[0]</span><br>
-        <span class="d-phase">cruise</span>  <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span> @ <span class="d-num">6.4</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[1]</span><br>
-        <span class="d-phase">descent</span> <span class="d-arrow">──&gt;</span> <span class="d-engine">turbofan_22k.csv</span> @ <span class="d-num">3.5</span>  <span class="d-arrow">──&gt;</span> <span class="d-out">[2]</span><br>
-        <br>
-        <span class="d-out">Mission.TOTAL_FUEL_MULTI</span>        <span class="d-arrow">=</span> <span class="d-sum">[fuel_28k_JetA, fuel_22k_SAF, fuel_22k_LNG]</span>  <span class="cm">(lbm)</span><br>
-        <span class="d-out">Mission.TOTAL_FUEL_VOLUME_MULTI</span> <span class="d-arrow">=</span> <span class="d-sum">[vol_28k_JetA,  vol_22k_SAF,  vol_22k_LNG]</span>   <span class="cm">(galUS)</span>
-      </div>
-    </section>
-
-    <!-- Contents -->
-    <section id="contents">
-      <h2>Contents</h2>
-      <ul class="file-list">
-        <li>
-          <span class="file-name">table_builder.py</span>
-          <span class="file-desc">
-            <code>EngineTableBuilder</code>, <code>MultiEngineTableBuilder</code>,
-            <code>MultiEngineFuelBurnComp</code>
-          </span>
-        </li>
-        <li>
-          <span class="file-name">run_single_aisle.py</span>
-          <span class="file-desc">
-            Example: LSA-2 aircraft with two engine tables across three phases
-          </span>
-        </li>
-      </ul>
-    </section>
-
-    <!-- EngineTableBuilder -->
-    <section id="engine-table-builder">
-      <h2>EngineTableBuilder</h2>
-      <p>
-        A thin wrapper around Aviary's <code>EngineDeck</code> that accepts a CSV
-        path directly at construction time. Useful on its own or as a building
-        block inside <code>MultiEngineTableBuilder</code>.
-      </p>
-      <div class="code-label">python</div>
-      <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> EngineTableBuilder
+                <!-- EngineTableBuilder -->
+                <section id="engine-table-builder">
+                    <h2>EngineTableBuilder</h2>
+                    <p>
+                        A thin wrapper around Aviary's
+                        <code>EngineDeck</code> that accepts a CSV path directly
+                        at construction time. Useful on its own or as a building
+                        block inside <code>MultiEngineTableBuilder</code>.
+                    </p>
+                    <div class="code-label">python</div>
+                    <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> EngineTableBuilder
 
 engine = <span class="fn">EngineTableBuilder</span>(
     name=<span class="st">'my_engine'</span>,
     csv_path=<span class="st">'models/engines/turbofan_22k.csv'</span>,
 )</code></pre>
-      <p>
-        Accepts both Aviary-relative paths (resolved via <code>get_path</code>) and
-        absolute paths.
-      </p>
-    </section>
+                    <p>
+                        Accepts both Aviary-relative paths (resolved via
+                        <code>get_path</code>) and absolute paths.
+                    </p>
+                </section>
 
-    <!-- MultiEngineTableBuilder -->
-    <section id="multi-engine-table-builder">
-      <h2>MultiEngineTableBuilder</h2>
-      <p>
-        Selects a different <code>EngineTableBuilder</code> CSV deck for each named
-        mission phase and tracks a fuel density per phase. All CSV files are
-        pre-loaded at construction time. During the mission, the correct deck is
-        dispatched based on the phase name injected into
-        <code>subsystem_options</code> by <code>configure_phase_info</code>.
-      </p>
+                <!-- MultiEngineTableBuilder -->
+                <section id="multi-engine-table-builder">
+                    <h2>MultiEngineTableBuilder</h2>
+                    <p>
+                        Selects a different <code>EngineTableBuilder</code> CSV
+                        deck for each named mission phase and tracks a fuel
+                        density per phase. All CSV files are pre-loaded at
+                        construction time. During the mission, the correct deck
+                        is dispatched based on the phase name injected into
+                        <code>subsystem_options</code> by
+                        <code>configure_phase_info</code>.
+                    </p>
 
-      <h3 id="constructor">Constructor</h3>
-      <div class="code-label">signature</div>
-      <pre><code><span class="fn">MultiEngineTableBuilder</span>(
+                    <h3 id="constructor">Constructor</h3>
+                    <div class="code-label">signature</div>
+                    <pre><code><span class="fn">MultiEngineTableBuilder</span>(
     name: <span class="fn">str</span> = <span class="st">'multi_engine_table'</span>,
     phase_engine_map: <span class="fn">dict</span> = <span class="kw">None</span>,
 )</code></pre>
 
-      <table>
-        <thead>
-          <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>name</code></td>
-            <td><code>str</code></td>
-            <td>Subsystem label. Must be unique among all external subsystems passed to <code>load_external_subsystems</code>.</td>
-          </tr>
-          <tr>
-            <td><code>phase_engine_map</code></td>
-            <td><code>dict</code></td>
-            <td>
-              Mapping of <em>phase name</em> → <code>(csv_path, density_lbm_per_galUS)</code>
-              tuple, or a plain CSV path string (falls back to Aviary's default density,
-              6.7 lbm/galUS). Uniqueness in the output arrays is determined by
-              <code>(csv, density)</code> pair — the same CSV used with two different
-              densities produces two separate output entries.
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>name</code></td>
+                                <td><code>str</code></td>
+                                <td>
+                                    Subsystem label. Must be unique among all
+                                    external subsystems passed to
+                                    <code>load_external_subsystems</code>.
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><code>phase_engine_map</code></td>
+                                <td><code>dict</code></td>
+                                <td>
+                                    Mapping of <em>phase name</em> →
+                                    <code
+                                        >(csv_path, density_lbm_per_galUS)</code
+                                    >
+                                    tuple, or a plain CSV path string (falls
+                                    back to Aviary's default density, 6.7
+                                    lbm/galUS). Uniqueness in the output arrays
+                                    is determined by
+                                    <code>(csv, density)</code> pair — the same
+                                    CSV used with two different densities
+                                    produces two separate output entries.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
 
-      <h3 id="usage">Usage</h3>
-      <div class="code-label">python</div>
-      <pre><code><span class="kw">from</span> copy <span class="kw">import</span> deepcopy
+                    <h3 id="usage">Usage</h3>
+                    <div class="code-label">python</div>
+                    <pre><code><span class="kw">from</span> copy <span class="kw">import</span> deepcopy
 <span class="kw">from</span> aviary.core.aviary_problem <span class="kw">import</span> AviaryProblem
 <span class="kw">from</span> aviary.models.missions.energy_state_default <span class="kw">import</span> phase_info
 <span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> MultiEngineTableBuilder
@@ -506,189 +652,273 @@ prob.<span class="fn">run_aviary_problem</span>()
 <span class="fn">print</span>(prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_MULTI,        units=<span class="st">'lbm'</span>))
 <span class="fn">print</span>(prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_VOLUME_MULTI, units=<span class="st">'galUS'</span>))</code></pre>
 
-      <h3 id="configure-phase-info">configure_phase_info</h3>
-      <p>
-        Injects the current phase name into each flight phase's
-        <code>subsystem_options</code> so <code>build_mission</code> can dispatch to
-        the correct engine deck. Modifies <code>phase_info</code> in-place and
-        returns it. Skips <code>pre_mission</code> and <code>post_mission</code>
-        entries.
-      </p>
-      <div class="callout note">
-        <strong>Call order matters.</strong> <code>configure_phase_info</code> must
-        be called before <code>AviaryProblem.load_inputs</code>.
-      </div>
+                    <h3 id="configure-phase-info">configure_phase_info</h3>
+                    <p>
+                        Injects the current phase name into each flight phase's
+                        <code>subsystem_options</code> so
+                        <code>build_mission</code> can dispatch to the correct
+                        engine deck. Modifies <code>phase_info</code> in-place
+                        and returns it. Skips <code>pre_mission</code> and
+                        <code>post_mission</code>
+                        entries.
+                    </p>
+                    <div class="callout note">
+                        <strong>Call order matters.</strong>
+                        <code>configure_phase_info</code> must be called before
+                        <code>AviaryProblem.load_inputs</code>.
+                    </div>
 
-      <h3 id="output-variable">Output variables</h3>
-      <p>
-        After the mission runs, per-engine fuel burn is available as mass and volume.
-        Both arrays are indexed by unique <code>(csv, density)</code> pair in order
-        of first appearance. Fuel burn for each phase is the change in gross mass
-        from phase start to phase end (<code>mass[t=0] − mass[t=final]</code>).
-        Volume is mass divided by the phase's density.
-      </p>
+                    <h3 id="output-variable">Output variables</h3>
+                    <p>
+                        After the mission runs, per-engine fuel burn is
+                        available as mass and volume. Both arrays are indexed by
+                        unique <code>(csv, density)</code> pair in order of
+                        first appearance. Fuel burn for each phase is the change
+                        in gross mass from phase start to phase end (<code
+                            >mass[t=0] − mass[t=final]</code
+                        >). Volume is mass divided by the phase's density.
+                    </p>
 
-      <table>
-        <thead>
-          <tr><th>Index</th><th>CSV (example)</th><th>Density (lbm/galUS)</th><th>Phases contributing</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>0</code></td>
-            <td><code>turbofan_28k.csv</code></td>
-            <td>6.7</td>
-            <td>climb</td>
-          </tr>
-          <tr>
-            <td><code>1</code></td>
-            <td><code>turbofan_22k.csv</code></td>
-            <td>6.4</td>
-            <td>cruise</td>
-          </tr>
-          <tr>
-            <td><code>2</code></td>
-            <td><code>turbofan_22k.csv</code></td>
-            <td>3.5</td>
-            <td>descent</td>
-          </tr>
-        </tbody>
-      </table>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Index</th>
+                                <th>CSV (example)</th>
+                                <th>Density (lbm/galUS)</th>
+                                <th>Phases contributing</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>0</code></td>
+                                <td><code>turbofan_28k.csv</code></td>
+                                <td>6.7</td>
+                                <td>climb</td>
+                            </tr>
+                            <tr>
+                                <td><code>1</code></td>
+                                <td><code>turbofan_22k.csv</code></td>
+                                <td>6.4</td>
+                                <td>cruise</td>
+                            </tr>
+                            <tr>
+                                <td><code>2</code></td>
+                                <td><code>turbofan_22k.csv</code></td>
+                                <td>3.5</td>
+                                <td>descent</td>
+                            </tr>
+                        </tbody>
+                    </table>
 
-      <div class="callout info">
-        The array length equals the number of unique <strong>(csv, density)</strong>
-        pairs in <code>phase_engine_map</code>, in order of first appearance.
-        Trajectory phases only — taxi and takeoff fuel modelled separately are not
-        included.
-      </div>
-    </section>
+                    <div class="callout info">
+                        The array length equals the number of unique
+                        <strong>(csv, density)</strong> pairs in
+                        <code>phase_engine_map</code>, in order of first
+                        appearance. Trajectory phases only — taxi and takeoff
+                        fuel modelled separately are not included.
+                    </div>
+                </section>
 
-    <!-- Aviary changes -->
-    <section id="aviary-changes">
-      <h2>Changes made to Aviary</h2>
-      <p>
-        Four Aviary source files were modified. All changes are additive; existing
-        engine models and mission setups are unaffected.
-      </p>
+                <!-- Aviary changes -->
+                <section id="aviary-changes">
+                    <h2>Changes made to Aviary</h2>
+                    <p>
+                        Four Aviary source files were modified. All changes are
+                        additive; existing engine models and mission setups are
+                        unaffected.
+                    </p>
 
-      <div class="change-item" id="variables">
-        <h3>aviary/variable_info/variables.py</h3>
-        <span class="tag green">additive</span>
-        <p>
-          Added <code>TOTAL_FUEL_MULTI = 'mission:total_fuel_multi'</code> to the
-          <code>Mission</code> class alongside the existing
-          <code>TOTAL_FUEL</code> entry.
-        </p>
-      </div>
+                    <div class="change-item" id="variables">
+                        <h3>aviary/variable_info/variables.py</h3>
+                        <span class="tag green">additive</span>
+                        <p>
+                            Added
+                            <code
+                                >TOTAL_FUEL_MULTI =
+                                'mission:total_fuel_multi'</code
+                            >
+                            to the <code>Mission</code> class alongside the
+                            existing <code>TOTAL_FUEL</code> entry.
+                        </p>
+                    </div>
 
-      <div class="change-item" id="meta-data">
-        <h3>aviary/variable_info/variable_meta_data.py</h3>
-        <span class="tag green">additive</span>
-        <p>
-          Added <code>add_meta_data</code> entries for both output variables:
-        </p>
-        <table>
-          <thead><tr><th>Variable</th><th>Units</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><code>Mission.TOTAL_FUEL_MULTI</code></td>
-              <td><code>lbm</code></td>
-              <td>Fuel mass burned per unique <code>(csv, density)</code> pair, ordered by first appearance in <code>phase_engine_map</code>.</td>
-            </tr>
-            <tr>
-              <td><code>Mission.TOTAL_FUEL_VOLUME_MULTI</code></td>
-              <td><code>galUS</code></td>
-              <td>Fuel volume burned per unique <code>(csv, density)</code> pair, derived by dividing each mass entry by its phase density.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                    <div class="change-item" id="meta-data">
+                        <h3>aviary/variable_info/variable_meta_data.py</h3>
+                        <span class="tag green">additive</span>
+                        <p>
+                            Added <code>add_meta_data</code> entries for both
+                            output variables:
+                        </p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Variable</th>
+                                    <th>Units</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <code>Mission.TOTAL_FUEL_MULTI</code>
+                                    </td>
+                                    <td><code>lbm</code></td>
+                                    <td>
+                                        Fuel mass burned per unique
+                                        <code>(csv, density)</code> pair,
+                                        ordered by first appearance in
+                                        <code>phase_engine_map</code>.
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <code
+                                            >Mission.TOTAL_FUEL_VOLUME_MULTI</code
+                                        >
+                                    </td>
+                                    <td><code>galUS</code></td>
+                                    <td>
+                                        Fuel volume burned per unique
+                                        <code>(csv, density)</code> pair,
+                                        derived by dividing each mass entry by
+                                        its phase density.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-      <div class="change-item" id="engine-model">
-        <h3>aviary/subsystems/propulsion/engine_model.py</h3>
-        <span class="tag blue">extended</span>
-        <p>
-          Two new methods added to <code>EngineModel</code>, both returning empty
-          defaults so all existing engine models are unaffected:
-        </p>
-        <table>
-          <thead>
-            <tr><th>Method</th><th>Default return</th><th>Purpose</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>get_post_mission_promotes_outputs()</code></td>
-              <td><code>[]</code></td>
-              <td>
-                Returns the <code>promotes_outputs</code> list used when adding
-                the engine's post-mission component to <code>PostMissionGroup</code>.
-                Not needed when <code>PostMissionGroup.configure</code> promotion
-                handles the variable automatically (as it does here), but available
-                for future subclasses.
-              </td>
-            </tr>
-            <tr>
-              <td><code>get_traj_connections(regular_phases)</code></td>
-              <td><code>[]</code></td>
-              <td>
-                Returns a list of <code>(src, tgt, src_indices)</code> tuples.
-                <code>AviaryGroup.link_phases</code> iterates these and calls
-                <code>self.connect</code> for each, wiring trajectory mass
-                timeseries into the post-mission component's inputs.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                    <div class="change-item" id="engine-model">
+                        <h3>aviary/subsystems/propulsion/engine_model.py</h3>
+                        <span class="tag blue">extended</span>
+                        <p>
+                            Two new methods added to <code>EngineModel</code>,
+                            both returning empty defaults so all existing engine
+                            models are unaffected:
+                        </p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Default return</th>
+                                    <th>Purpose</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <code
+                                            >get_post_mission_promotes_outputs()</code
+                                        >
+                                    </td>
+                                    <td><code>[]</code></td>
+                                    <td>
+                                        Returns the
+                                        <code>promotes_outputs</code> list used
+                                        when adding the engine's post-mission
+                                        component to
+                                        <code>PostMissionGroup</code>. Not
+                                        needed when
+                                        <code>PostMissionGroup.configure</code>
+                                        promotion handles the variable
+                                        automatically (as it does here), but
+                                        available for future subclasses.
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <code
+                                            >get_traj_connections(regular_phases)</code
+                                        >
+                                    </td>
+                                    <td><code>[]</code></td>
+                                    <td>
+                                        Returns a list of
+                                        <code>(src, tgt, src_indices)</code>
+                                        tuples.
+                                        <code>AviaryGroup.link_phases</code>
+                                        iterates these and calls
+                                        <code>self.connect</code> for each,
+                                        wiring trajectory mass timeseries into
+                                        the post-mission component's inputs.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-      <div class="change-item" id="aviary-group">
-        <h3>aviary/core/aviary_group.py</h3>
-        <span class="tag blue">extended</span>
-        <p>Two targeted additions inside <code>AviaryGroup</code>:</p>
+                    <div class="change-item" id="aviary-group">
+                        <h3>aviary/core/aviary_group.py</h3>
+                        <span class="tag blue">extended</span>
+                        <p>
+                            Two targeted additions inside
+                            <code>AviaryGroup</code>:
+                        </p>
 
-        <h4>add_post_mission_systems</h4>
-        <p>
-          After the existing loop over <code>self.subsystems</code>, a new loop
-          iterates <code>self.engine_models</code> and calls
-          <code>build_post_mission</code> on each. If a component is returned it is
-          added to <code>PostMissionGroup</code> without explicit promotes.
-          <code>PostMissionGroup.configure</code> then calls
-          <code>promote_aircraft_and_mission_vars</code>, which automatically
-          promotes any <code>mission:*</code> output — including
-          <code>Mission.TOTAL_FUEL_MULTI</code> — up to the top level.
-        </p>
+                        <h4>add_post_mission_systems</h4>
+                        <p>
+                            After the existing loop over
+                            <code>self.subsystems</code>, a new loop iterates
+                            <code>self.engine_models</code> and calls
+                            <code>build_post_mission</code> on each. If a
+                            component is returned it is added to
+                            <code>PostMissionGroup</code> without explicit
+                            promotes.
+                            <code>PostMissionGroup.configure</code> then calls
+                            <code>promote_aircraft_and_mission_vars</code>,
+                            which automatically promotes any
+                            <code>mission:*</code> output — including
+                            <code>Mission.TOTAL_FUEL_MULTI</code> — up to the
+                            top level.
+                        </p>
 
-        <h4>link_phases</h4>
-        <p>
-          After the standard trajectory-to-<code>state_output</code> connections,
-          a new loop calls <code>get_traj_connections(self.regular_phases)</code> on
-          each engine model and registers the returned
-          <code>(src, tgt, src_indices)</code> connections. This is how
-          <code>traj.{phase}.timeseries.mass[0]</code> and
-          <code>traj.{phase}.timeseries.mass[-1]</code> are wired into
-          <code>MultiEngineFuelBurnComp</code>'s inputs for each phase.
-        </p>
-      </div>
-    </section>
+                        <h4>link_phases</h4>
+                        <p>
+                            After the standard trajectory-to-<code
+                                >state_output</code
+                            >
+                            connections, a new loop calls
+                            <code
+                                >get_traj_connections(self.regular_phases)</code
+                            >
+                            on each engine model and registers the returned
+                            <code>(src, tgt, src_indices)</code> connections.
+                            This is how
+                            <code>traj.{phase}.timeseries.mass[0]</code> and
+                            <code>traj.{phase}.timeseries.mass[-1]</code> are
+                            wired into <code>MultiEngineFuelBurnComp</code>'s
+                            inputs for each phase.
+                        </p>
+                    </div>
+                </section>
+            </main>
+        </div>
 
-  </main>
-</div>
+        <script>
+            // Highlight active nav link on scroll
+            const sections = document.querySelectorAll(
+                "section[id], div.change-item[id]",
+            );
+            const navLinks = document.querySelectorAll("nav a");
 
-<script>
-  // Highlight active nav link on scroll
-  const sections = document.querySelectorAll('section[id], div.change-item[id]');
-  const navLinks = document.querySelectorAll('nav a');
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            navLinks.forEach((a) =>
+                                a.classList.remove("active"),
+                            );
+                            const active = document.querySelector(
+                                `nav a[href="#${entry.target.id}"]`,
+                            );
+                            if (active) active.classList.add("active");
+                        }
+                    });
+                },
+                { rootMargin: "-20% 0px -70% 0px" },
+            );
 
-  const observer = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        navLinks.forEach(a => a.classList.remove('active'));
-        const active = document.querySelector(`nav a[href="#${entry.target.id}"]`);
-        if (active) active.classList.add('active');
-      }
-    });
-  }, { rootMargin: '-20% 0px -70% 0px' });
-
-  sections.forEach(s => observer.observe(s));
-</script>
-</body>
+            sections.forEach((s) => observer.observe(s));
+        </script>
+    </body>
 </html>
