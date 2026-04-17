@@ -93,7 +93,7 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
         prob.setup()
         prob.run_aviary_problem(suppress_solver_print=True)
 
-        self.assertTrue(prob.result.success)
+        self.assertTrue(prob.result.success)  # type: ignore[attr-defined]
 
     @require_pyoptsparse(optimizer='IPOPT')
     def test_multi_fuel_fuel_burn_values(self):
