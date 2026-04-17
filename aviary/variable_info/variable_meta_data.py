@@ -7394,6 +7394,27 @@ add_meta_data(
 )
 
 add_meta_data(
+    Mission.TOTAL_FUEL_MULTI,
+    meta_data=_MetaData,
+    historical_name={'GASP': None, 'FLOPS': None, 'LEAPS1': None},
+    units='lbm',
+    desc='total fuel burned per unique engine table, ordered by first appearance in '
+    'phase_engine_map. Array length equals the number of unique engine CSVs.',
+    default_value=0.0,
+)
+
+add_meta_data(
+    Mission.TOTAL_FUEL_VOLUME_MULTI,
+    meta_data=_MetaData,
+    historical_name={'GASP': None, 'FLOPS': None, 'LEAPS1': None},
+    units='galUS',
+    desc='total fuel volume burned per unique engine table, computed from '
+    'Mission.TOTAL_FUEL_MULTI divided by the per-engine Aircraft.Fuel.DENSITY override. '
+    'Array length equals the number of unique engine CSVs.',
+    default_value=0.0,
+)
+
+add_meta_data(
     Mission.TOTAL_RESERVE_FUEL,
     meta_data=_MetaData,
     historical_name={'GASP': None, 'FLOPS': None, 'LEAPS1': None},

@@ -8,7 +8,7 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
 )
 from aviary.models.missions.energy_state_default import phase_info
 from aviary.variable_info.variables import Aircraft
-from dual_fuel.table_builder import MultiEngineTableBuilder
+from multi_fuel.table_builder import MultiEngineTableBuilder
 
 phase_info = deepcopy(phase_info)
 
@@ -23,10 +23,14 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 engine = MultiEngineTableBuilder(
     phase_engine_map={
         'climb': 'models/engines/turbofan_28k.csv',
-        # 'cruise': 'models/engines/turbofan_28k.csv',
         'cruise': 'models/engines/turbofan_22k.csv',
         'descent': 'models/engines/turbofan_22k.csv',
-    }
+    },
+    fuel_density_map={
+        'models/engines/turbofan_28k.csv': 6.7,  # Jet-A
+        'models/engines/turbofan_22k.csv': 6.4,  # SAF blend
+        'models/engines/turbofan_22k.csv': 3.5,  # LNG
+    },
 )
 phase_info = engine.configure_phase_info(phase_info)
 
@@ -54,3 +58,11 @@ if __name__ == '__main__':
     from aviary.variable_info.variables import Mission
 
     print('Total fuel (lbm):', prob.get_val(Mission.TOTAL_FUEL, units='lbm'))
+    print(
+        'Per-engine fuel (lbm):',
+        prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm'),
+    )
+    print(
+        'Per-engine fuel (galUS):',
+        prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI, units='galUS'),
+    )

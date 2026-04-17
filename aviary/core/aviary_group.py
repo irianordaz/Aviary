@@ -837,6 +837,17 @@ class AviaryGroup(om.Group):
             if subsystem_postmission is not None:
                 post_mission.add_subsystem(name, subsystem_postmission)
 
+        # Also call build_post_mission on engine models; promote outputs so variables
+        # like Mission.TOTAL_FUEL_MULTI surface at the aviary_group level.
+        for engine_model in self.engine_models:
+            engine_postmission = engine_model.build_post_mission(
+                aviary_inputs=self.aviary_inputs,
+                mission_info=self.mission_info,
+                phase_mission_bus_lengths=phase_mission_bus_lengths,
+            )
+            if engine_postmission is not None:
+                post_mission.add_subsystem(engine_model.name, engine_postmission)
+
         # Check if regular_phases[] is accessible
         try:
             self.regular_phases[0]
@@ -1098,6 +1109,13 @@ class AviaryGroup(om.Group):
         self.connect(
             f'traj.{final_phase}.timeseries.time', 'state_output.time_in', src_indices=[-1]
         )
+
+        # Wire trajectory mass timeseries into any engine-model post-mission components.
+        for engine_model in self.engine_models:
+            for src, tgt, src_indices in engine_model.get_traj_connections(
+                self.regular_phases
+            ):
+                self.connect(src, tgt, src_indices=src_indices)
 
         phases = list(self.mission_info.keys())
 

@@ -130,6 +130,28 @@ class EngineModel(SubsystemBuilder):
         """
         return None
 
+    def get_post_mission_promotes_outputs(self):
+        """
+        Return the promotes_outputs list for the post-mission subsystem added by
+        build_post_mission. Override to expose specific outputs at the group level.
+        """
+        return []
+
+    def get_traj_connections(self, regular_phases):
+        """
+        Return connection specs for wiring trajectory states into post-mission components.
+
+        Called by AviaryGroup.link_phases() after post-mission systems are built.
+        Override in subclasses that add custom post-mission components needing trajectory
+        state inputs.
+
+        Returns
+        -------
+        list of (src, tgt, src_indices) tuples, each passed directly to
+        ``AviaryGroup.connect(src, tgt, src_indices=src_indices)``.
+        """
+        return []
+
     def _preprocess_inputs(self):
         """
         Raises TypeError if options are not an instance of AviaryValues (or None).

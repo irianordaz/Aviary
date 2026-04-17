@@ -666,6 +666,8 @@ class Mission:
     RESERVE_FUEL_ADDITIONAL = 'mission:reserve_fuel_additional'
     RESERVE_FUEL_MARGIN = 'mission:reserve_fuel_margin'
     TOTAL_FUEL = 'mission:total_fuel'
+    TOTAL_FUEL_MULTI = 'mission:total_fuel_multi'
+    TOTAL_FUEL_VOLUME_MULTI = 'mission:total_fuel_volume_multi'
     TOTAL_RESERVE_FUEL = 'mission:total_reserve_fuel'
     USEFUL_LOAD = 'mission:useful_load'
     ZERO_FUEL_MASS = 'mission:zero_fuel_mass'
