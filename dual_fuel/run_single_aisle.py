@@ -8,7 +8,7 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
 )
 from aviary.models.missions.energy_state_default import phase_info
 from aviary.variable_info.variables import Aircraft
-from dual_fuel.table_builder import EngineTableBuilder
+from dual_fuel.table_builder import MultiEngineTableBuilder
 
 phase_info = deepcopy(phase_info)
 
@@ -16,22 +16,25 @@ inputs = deepcopy(lsa2_inputs)
 
 inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-engine1 = EngineTableBuilder(csv_path='models/engines/turbofan_22k.csv')
 inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
+inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
-# engine2 = EngineTableBuilder(csv_path='aviary/models/engines/turbofan_28k.csv')
-# inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 28928.1, 'lbf')
-# inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 28928.1, 'lbf')
+engine = MultiEngineTableBuilder(
+    phase_csv_map={
+        'climb': 'models/engines/turbofan_22k.csv',
+        'cruise': 'aviary/models/engines/turbofan_28k.csv',
+        'descent': 'models/engines/turbofan_22k.csv',
+    }
+)
+phase_info = engine.configure_phase_info(phase_info)
 
 if __name__ == '__main__':
     prob = AviaryProblem()
 
     prob.load_inputs(inputs, phase_info)
 
-    prob.load_external_subsystems([engine1])
+    prob.load_external_subsystems([engine])
 
     prob.check_and_preprocess_inputs()
 
