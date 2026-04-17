@@ -20,6 +20,53 @@
                 --tag-purple: #a78bfa;
             }
 
+            @media (prefers-color-scheme: light) {
+                :root {
+                    --bg: #f8f9fa;
+                    --surface: #ffffff;
+                    --border: #e2e8f0;
+                    --accent: #2563eb;
+                    --accent2: #7c3aed;
+                    --text: #1e293b;
+                    --muted: #64748b;
+                    --code-bg: #f1f5f9;
+                    --code-text: #334155;
+                    --tag-green: #16a34a;
+                    --tag-blue: #0284c7;
+                    --tag-purple: #9333ea;
+                }
+            }
+
+        [data-theme="dark"] {
+                --bg: #0f1117;
+                --surface: #1a1d27;
+                --border: #2a2d3a;
+                --accent: #4f8ef7;
+                --accent2: #a78bfa;
+                --text: #e2e8f0;
+                --muted: #8892a4;
+                --code-bg: #111827;
+                --code-text: #c9d1e0;
+                --tag-green: #22c55e;
+                --tag-blue: #38bdf8;
+                --tag-purple: #a78bfa;
+            }
+
+            [data-theme="light"] {
+                --bg: #f8f9fa;
+                --surface: #ffffff;
+                --border: #e2e8f0;
+                --accent: #2563eb;
+                --accent2: #7c3aed;
+                --text: #1e293b;
+                --muted: #64748b;
+                --code-bg: #f1f5f9;
+                --code-text: #334155;
+                --tag-green: #16a34a;
+                --tag-blue: #0284c7;
+                --tag-purple: #9333ea;
+            }
+
             * {
                 box-sizing: border-box;
                 margin: 0;
@@ -34,6 +81,27 @@
                     sans-serif;
                 font-size: 20px;
                 line-height: 1.7;
+            }
+
+            /* ── Theme Toggle ─────────────────────────────────────── */
+            .theme-toggle {
+                position: fixed;
+                bottom: 1.5rem;
+                right: 1.5rem;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                color: var(--text);
+                font-size: 0.85rem;
+                font-weight: 600;
+                padding: 0.5rem 0.75rem;
+                border-radius: 6px;
+                cursor: pointer;
+                z-index: 100;
+                transition: background 0.15s, color 0.15s;
+            }
+            .theme-toggle:hover {
+                background: var(--accent);
+                color: #fff;
             }
 
             /* ── Layout ────────────────────────────────────────────── */
@@ -202,6 +270,37 @@
                 position: relative;
             }
 
+            pre .copy-btn {
+                position: absolute;
+                top: 0.6rem;
+                right: 0.75rem;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                color: var(--muted);
+                font-size: 0.78rem;
+                font-weight: 600;
+                padding: 0.25rem 0.6rem;
+                border-radius: 5px;
+                cursor: pointer;
+                opacity: 0;
+                transition: opacity 0.15s, background 0.15s, color 0.15s;
+                z-index: 2;
+            }
+
+            pre:hover .copy-btn {
+                opacity: 1;
+            }
+
+            pre .copy-btn:hover {
+                background: var(--accent);
+                color: #fff;
+            }
+
+            pre .copy-btn.copied {
+                background: var(--tag-green);
+                color: #fff;
+            }
+
             pre code {
                 background: none;
                 border: none;
@@ -236,6 +335,29 @@
             }
             .num {
                 color: #f9a8d4;
+            }
+
+            /* light mode syntax overrides */
+            [data-theme="light"] .kw {
+                color: #7c3aed;
+            }
+            [data-theme="light"] .st {
+                color: #16a34a;
+            }
+            [data-theme="light"] .cm {
+                color: #64748b;
+            }
+
+            @media (prefers-color-scheme: light) {
+                .kw {
+                    color: #7c3aed;
+                }
+                .st {
+                    color: #16a34a;
+                }
+                .cm {
+                    color: #64748b;
+                }
             }
 
             /* ── Tables ─────────────────────────────────────────────── */
@@ -410,7 +532,8 @@
                 </div>
                 <ul>
                     <li><a href="#overview" class="active">Overview</a></li>
-                    <li><a href="#contents">Contents</a></li>
+                    <li><a href="#quick-start">Quick Start</a></li>
+                    <li><a href="#file-structure">File Structure</a></li>
 
                     <li class="nav-section">Classes</li>
                     <li>
@@ -434,11 +557,17 @@
                         >
                     </li>
 
-                    <li class="nav-section">Aviary Changes</li>
+                    <li class="nav-section">Aviary Integration</li>
                     <li><a href="#variables">variables.py</a></li>
                     <li><a href="#meta-data">variable_meta_data.py</a></li>
                     <li><a href="#engine-model">engine_model.py</a></li>
                     <li><a href="#aviary-group">aviary_group.py</a></li>
+
+                    <li class="nav-section">Additional</li>
+                    <li><a href="#running-example">Running the Example</a></li>
+                    <li><a href="#when-to-use">When to Use</a></li>
+                    <li><a href="#limitations">Limitations</a></li>
+                    <li><a href="#see-also">See Also</a></li>
                 </ul>
             </nav>
 
@@ -447,11 +576,12 @@
                 <!-- Hero -->
                 <div class="hero">
                     <div class="hero-eyebrow">Aviary Extension</div>
-                    <h1>Phase-Based Multi-Fuel Capability</h1>
+                    <h1>Phase-Based Multi-Fuel Engine Capability</h1>
                     <p>
-                        Use a different CSV engine deck for each mission phase
-                        and retrieve per-engine total fuel burn as an OpenMDAO
-                        output variable.
+                        An Aviary extension that enables using different CSV engine
+                        decks with distinct fuel densities for each mission phase,
+                        and reporting per-engine total fuel burn as OpenMDAO output
+                        variables.
                     </p>
                 </div>
 
@@ -461,25 +591,33 @@
                     <p>
                         Aviary's standard engine model uses a single CSV
                         performance deck across all flight phases. The
-                        <strong>multi_fuel</strong> builder extends this with
+                        <strong>multi_fuel</strong> extension introduces
                         <code>MultiEngineTableBuilder</code>, which dispatches a
                         different <code>EngineDeck</code> for each named phase
-                        (climb, cruise, descent, …) and tracks a fuel density
-                        per phase. After the mission, per-engine fuel burn is
-                        summed and exposed as
-                        <code>Mission.TOTAL_FUEL_MULTI</code> (mass) and
-                        <code>Mission.TOTAL_FUEL_VOLUME_MULTI</code> (volume) —
-                        arrays indexed by unique
-                        <code>(csv, density)</code> pair, so the same CSV file
-                        used with two different fuel densities produces two
-                        separate output entries.
+                        (climb, cruise, descent, etc.) and tracks a fuel density
+                        per phase.
                     </p>
-
-                    <div class="callout info">
-                        <strong>Additive only.</strong> All changes to Aviary
-                        are additive. Existing engine models and mission setups
-                        are not affected.
-                    </div>
+                    <p>
+                        After the mission runs, per-engine fuel burn is summed
+                        and exposed as:
+                    </p>
+                    <ul>
+                        <li>
+                            <code>Mission.TOTAL_FUEL_MULTI</code> (mass, lbm)
+                        </li>
+                        <li>
+                            <code
+                                >Mission.TOTAL_FUEL_VOLUME_MULTI</code
+                            >
+                            (volume, galUS)
+                        </li>
+                    </ul>
+                    <p>
+                        Both arrays are indexed by unique
+                        <code>(csv, density)</code> pair in order of first
+                        appearance. The same CSV file used with two different
+                        fuel densities produces two separate output entries.
+                    </p>
 
                     <div class="diagram">
                         <span class="d-phase">climb</span>
@@ -518,23 +656,61 @@
                     </div>
                 </section>
 
-                <!-- Contents -->
-                <section id="contents">
-                    <h2>Contents</h2>
+                <!-- Quick Start -->
+                <section id="quick-start">
+                    <h2>Quick Start</h2>
+                    <div class="code-label">python</div>
+                    <pre><code><span class="kw">from</span> copy <span class="kw">import</span> deepcopy
+<span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> MultiEngineTableBuilder
+
+<span class="cm"># Define phase-to-engine mappings with fuel densities</span>
+engine = <span class="fn">MultiEngineTableBuilder</span>(
+    phase_engine_map={
+        <span class="st">'climb'</span>:   (<span class="st">'models/engines/turbofan_28k.csv'</span>, <span class="num">6.7</span>),  <span class="cm"># Jet-A</span>
+        <span class="st">'cruise'</span>:  (<span class="st">'models/engines/turbofan_22k.csv'</span>,  <span class="num">6.4</span>),  <span class="cm"># SAF blend</span>
+        <span class="st">'descent'</span>: (<span class="st">'models/engines/turbofan_22k.csv'</span>,  <span class="num">6.4</span>),  <span class="cm"># LNG</span>
+    },
+)
+
+<span class="cm"># Configure phase info before passing to AviaryProblem</span>
+phase_info = engine.<span class="fn">configure_phase_info</span>(<span class="fn">deepcopy</span>(phase_info))
+
+<span class="cm"># Use with AviaryProblem</span>
+prob = <span class="fn">AviaryProblem</span>()
+prob.<span class="fn">load_inputs</span>(aviary_inputs, phase_info)
+prob.<span class="fn">load_external_subsystems</span>([engine])
+prob.<span class="fn">check_and_preprocess_inputs</span>()
+prob.<span class="fn">build_model</span>()
+prob.<span class="fn">add_driver</span>(<span class="st">'IPOPT'</span>, max_iter=<span class="num">50</span>, use_coloring=<span class="kw">True</span>)
+prob.<span class="fn">add_design_variables</span>()
+prob.<span class="fn">add_objective</span>()
+prob.<span class="fn">setup</span>()
+prob.<span class="fn">run_aviary_problem</span>()
+
+<span class="cm"># Access results</span>
+<span class="kw">from</span> aviary.variable_info.variables <span class="kw">import</span> Mission
+fuel_mass = prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_MULTI, units=<span class="st">'lbm'</span>)
+fuel_volume = prob.<span class="fn">get_val</span>(Mission.TOTAL_FUEL_VOLUME_MULTI, units=<span class="st">'galUS'</span>)</code></pre>
+                </section>
+
+                <!-- File Structure -->
+                <section id="file-structure">
+                    <h2>File Structure</h2>
                     <ul class="file-list">
                         <li>
                             <span class="file-name">table_builder.py</span>
                             <span class="file-desc">
+                                Core implementation:
+                                <code>MultiEngineFuelBurnComp</code>,
                                 <code>EngineTableBuilder</code>,
-                                <code>MultiEngineTableBuilder</code>,
-                                <code>MultiEngineFuelBurnComp</code>
+                                <code>MultiEngineTableBuilder</code>
                             </span>
                         </li>
                         <li>
                             <span class="file-name">run_single_aisle.py</span>
                             <span class="file-desc">
-                                Example: LSA-2 aircraft with two engine tables
-                                across three phases
+                                Complete example: LSA-2 aircraft with multi-fuel
+                                engine decks across three phases
                             </span>
                         </li>
                     </ul>
@@ -719,14 +895,15 @@ prob.<span class="fn">run_aviary_problem</span>()
                     </div>
                 </section>
 
-                <!-- Aviary changes -->
-                <section id="aviary-changes">
-                    <h2>Changes made to Aviary</h2>
+                <!-- Aviary Integration -->
+                <section id="aviary-integration">
+                    <h2>Aviary Integration</h2>
                     <p>
-                        Four Aviary source files were modified. All changes are
-                        additive; existing engine models and mission setups are
-                        unaffected.
+                        All changes to Aviary are additive and do not affect
+                        existing engine models or mission setups.
                     </p>
+
+                    <h3>Modified Files</h3>
 
                     <div class="change-item" id="variables">
                         <h3>aviary/variable_info/variables.py</h3>
@@ -737,8 +914,7 @@ prob.<span class="fn">run_aviary_problem</span>()
                                 >TOTAL_FUEL_MULTI =
                                 'mission:total_fuel_multi'</code
                             >
-                            to the <code>Mission</code> class alongside the
-                            existing <code>TOTAL_FUEL</code> entry.
+                            to the <code>Mission</code> class.
                         </p>
                     </div>
 
@@ -746,61 +922,24 @@ prob.<span class="fn">run_aviary_problem</span>()
                         <h3>aviary/variable_info/variable_meta_data.py</h3>
                         <span class="tag green">additive</span>
                         <p>
-                            Added <code>add_meta_data</code> entries for both
-                            output variables:
+                            Added metadata entries for both output variables with
+                            units (<code>lbm</code> and <code>galUS</code>) and
+                            descriptions.
                         </p>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Variable</th>
-                                    <th>Units</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>
-                                        <code>Mission.TOTAL_FUEL_MULTI</code>
-                                    </td>
-                                    <td><code>lbm</code></td>
-                                    <td>
-                                        Fuel mass burned per unique
-                                        <code>(csv, density)</code> pair,
-                                        ordered by first appearance in
-                                        <code>phase_engine_map</code>.
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>
-                                        <code
-                                            >Mission.TOTAL_FUEL_VOLUME_MULTI</code
-                                        >
-                                    </td>
-                                    <td><code>galUS</code></td>
-                                    <td>
-                                        Fuel volume burned per unique
-                                        <code>(csv, density)</code> pair,
-                                        derived by dividing each mass entry by
-                                        its phase density.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
                     </div>
 
                     <div class="change-item" id="engine-model">
                         <h3>aviary/subsystems/propulsion/engine_model.py</h3>
                         <span class="tag blue">extended</span>
                         <p>
-                            Two new methods added to <code>EngineModel</code>,
-                            both returning empty defaults so all existing engine
-                            models are unaffected:
+                            Extended <code>EngineModel</code> base class with two
+                            new methods returning empty defaults:
                         </p>
                         <table>
                             <thead>
                                 <tr>
                                     <th>Method</th>
-                                    <th>Default return</th>
+                                    <th>Default Return</th>
                                     <th>Purpose</th>
                                 </tr>
                             </thead>
@@ -813,16 +952,8 @@ prob.<span class="fn">run_aviary_problem</span>()
                                     </td>
                                     <td><code>[]</code></td>
                                     <td>
-                                        Returns the
-                                        <code>promotes_outputs</code> list used
-                                        when adding the engine's post-mission
-                                        component to
-                                        <code>PostMissionGroup</code>. Not
-                                        needed when
-                                        <code>PostMissionGroup.configure</code>
-                                        promotion handles the variable
-                                        automatically (as it does here), but
-                                        available for future subclasses.
+                                        Returns output variable list for
+                                        post-mission component
                                     </td>
                                 </tr>
                                 <tr>
@@ -833,14 +964,7 @@ prob.<span class="fn">run_aviary_problem</span>()
                                     </td>
                                     <td><code>[]</code></td>
                                     <td>
-                                        Returns a list of
-                                        <code>(src, tgt, src_indices)</code>
-                                        tuples.
-                                        <code>AviaryGroup.link_phases</code>
-                                        iterates these and calls
-                                        <code>self.connect</code> for each,
-                                        wiring trajectory mass timeseries into
-                                        the post-mission component's inputs.
+                                        Returns trajectory connection specs
                                     </td>
                                 </tr>
                             </tbody>
@@ -851,65 +975,181 @@ prob.<span class="fn">run_aviary_problem</span>()
                         <h3>aviary/core/aviary_group.py</h3>
                         <span class="tag blue">extended</span>
                         <p>
-                            Two targeted additions inside
-                            <code>AviaryGroup</code>:
+                            Added two internal methods:
                         </p>
-
-                        <h4>add_post_mission_systems</h4>
-                        <p>
-                            After the existing loop over
-                            <code>self.subsystems</code>, a new loop iterates
-                            <code>self.engine_models</code> and calls
-                            <code>build_post_mission</code> on each. If a
-                            component is returned it is added to
-                            <code>PostMissionGroup</code> without explicit
-                            promotes.
-                            <code>PostMissionGroup.configure</code> then calls
-                            <code>promote_aircraft_and_mission_vars</code>,
-                            which automatically promotes any
-                            <code>mission:*</code> output — including
-                            <code>Mission.TOTAL_FUEL_MULTI</code> — up to the
-                            top level.
-                        </p>
-
-                        <h4>link_phases</h4>
-                        <p>
-                            After the standard trajectory-to-<code
-                                >state_output</code
-                            >
-                            connections, a new loop calls
-                            <code
-                                >get_traj_connections(self.regular_phases)</code
-                            >
-                            on each engine model and registers the returned
-                            <code>(src, tgt, src_indices)</code> connections.
-                            This is how
-                            <code>traj.{phase}.timeseries.mass[0]</code> and
-                            <code>traj.{phase}.timeseries.mass[-1]</code> are
-                            wired into <code>MultiEngineFuelBurnComp</code>'s
-                            inputs for each phase.
-                        </p>
+                        <ol>
+                            <li>
+                                <strong
+                                    >add_post_mission_systems</strong
+                                >
+                                — Iterates
+                                <code>self.engine_models</code> and adds
+                                post-mission components to
+                                <code>PostMissionGroup</code>
+                            </li>
+                            <li>
+                                <strong>link_phases</strong> — Wires trajectory
+                                mass timeseries into post-mission component
+                                inputs
+                            </li>
+                        </ol>
                     </div>
                 </section>
+
+                <!-- Running the Example -->
+                <section id="running-example">
+                    <h2>Running the Example</h2>
+                    <p>
+                        Execute the complete LSA-2 example with multi-fuel engine
+                        decks:
+                    </p>
+                    <div class="code-label">bash</div>
+                    <pre><code>pixi run python multi_fuel/run_single_aisle.py</code></pre>
+                    <p>Expected output:</p>
+                    <div class="diagram">
+                        <span class="cm">Success: True</span><br />
+                        <span class="d-out">Total fuel (lbm): [19536.72787796]</span><br />
+                        <span class="d-out">Per-engine fuel (lbm): [ 6149.880128   12727.84774995]</span><br />
+                        <span class="d-out">Per-engine fuel (galUS): [ 917.89255642 1988.72621093]</span>
+                    </div>
+                </section>
+
+                <!-- When to Use -->
+                <section id="when-to-use">
+                    <h2>When to Use This Extension</h2>
+                    <p>
+                        Use <strong>multi_fuel</strong> when you need to:
+                    </p>
+                    <ul>
+                        <li>
+                            Simulate aircraft operations with different fuel
+                            types across mission phases (Jet-A, SAF blend, LNG,
+                            etc.)
+                        </li>
+                        <li>
+                            Model engine performance variations between different
+                            engine decks for different phases
+                        </li>
+                        <li>
+                            Track fuel consumption separately by fuel type for
+                            reporting and analysis
+                        </li>
+                        <li>
+                            Optimize mission profiles with multi-fuel constraints
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Limitations -->
+                <section id="limitations">
+                    <h2>Limitations</h2>
+                    <ul>
+                        <li>
+                            Only supports CSV-based engine decks (not parameterized
+                            engine models)
+                        </li>
+                        <li>
+                            Fuel density is assumed constant within each phase
+                        </li>
+                        <li>
+                            Pre-mission and post-mission phases use the first
+                            configured engine deck
+                        </li>
+                        <li>
+                            Taxi and takeoff fuel burn is not included in the
+                            multi-fuel output arrays
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- See Also -->
+                <section id="see-also">
+                    <h2>See Also</h2>
+                    <ul>
+                        <li>
+                            <a href="https://openmdao.org/aviary"
+                                >Aviary Documentation</a
+                            >
+                        </li>
+                        <li>
+                            <code>multi_fuel/table_builder.py</code> — Source code
+                            with detailed docstrings
+                        </li>
+                        <li>
+                            <code>multi_fuel/docs/index.html</code> — Interactive
+                            documentation with examples
+                        </li>
+                        <li>
+                            <code>aviary/subsystems/propulsion/engine_deck.py</code>
+                            — Base EngineDeck implementation
+                        </li>
+                    </ul>
+                </section>
+
             </main>
         </div>
 
+        <button class="theme-toggle" id="themeToggle">☀ Light</button>
+
         <script>
+            // Theme toggle
+            (function () {
+                var toggle = document.getElementById("themeToggle");
+                var stored = localStorage.getItem("theme");
+                if (stored) {
+                    document.documentElement.setAttribute("data-theme", stored);
+                } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+                function updateLabel() {
+                    var theme = document.documentElement.getAttribute("data-theme");
+                    toggle.textContent = theme === "light" ? "☾ Dark" : "☀ Light";
+                }
+                updateLabel();
+                toggle.addEventListener("click", function () {
+                    var current = document.documentElement.getAttribute("data-theme");
+                    var next = current === "light" ? "dark" : "light";
+                    document.documentElement.setAttribute("data-theme", next);
+                    localStorage.setItem("theme", next);
+                    updateLabel();
+                });
+            })();
+
+            // Add copy buttons to code blocks
+            document.querySelectorAll("pre").forEach(function (pre) {
+                var btn = document.createElement("button");
+                btn.className = "copy-btn";
+                btn.textContent = "copy";
+                btn.addEventListener("click", function () {
+                    var code = pre.querySelector("code");
+                    var text = code ? code.textContent : pre.textContent;
+                    navigator.clipboard.writeText(text).then(function () {
+                        btn.textContent = "copied";
+                        btn.classList.add("copied");
+                        setTimeout(function () {
+                            btn.textContent = "copy";
+                            btn.classList.remove("copied");
+                        }, 1500);
+                    });
+                });
+                pre.appendChild(btn);
+            });
+
             // Highlight active nav link on scroll
-            const sections = document.querySelectorAll(
+            var sections = document.querySelectorAll(
                 "section[id], div.change-item[id]",
             );
-            const navLinks = document.querySelectorAll("nav a");
+            var navLinks = document.querySelectorAll("nav a");
 
-            const observer = new IntersectionObserver(
-                (entries) => {
-                    entries.forEach((entry) => {
+            var observer = new IntersectionObserver(
+                function (entries) {
+                    entries.forEach(function (entry) {
                         if (entry.isIntersecting) {
-                            navLinks.forEach((a) =>
-                                a.classList.remove("active"),
-                            );
-                            const active = document.querySelector(
-                                `nav a[href="#${entry.target.id}"]`,
+                            navLinks.forEach(function (a) {
+                                a.classList.remove("active");
+                            });
+                            var active = document.querySelector(
+                                "nav a[href=\"#" + entry.target.id + "\"]",
                             );
                             if (active) active.classList.add("active");
                         }
@@ -918,7 +1158,9 @@ prob.<span class="fn">run_aviary_problem</span>()
                 { rootMargin: "-20% 0px -70% 0px" },
             );
 
-            sections.forEach((s) => observer.observe(s));
+            for (var i = 0; i < sections.length; i++) {
+                observer.observe(sections[i]);
+            }
         </script>
     </body>
 </html>

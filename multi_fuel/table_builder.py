@@ -154,8 +154,8 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         unique_entries = list(dict.fromkeys(phase_engine_map.values()))
         self._unique_entries = unique_entries
         n = len(unique_entries)
-        self.add_output(Mission.TOTAL_FUEL_MULTI, val=np.zeros(n), units='lbm')
-        self.add_output(Mission.TOTAL_FUEL_VOLUME_MULTI, val=np.zeros(n), units='galUS')
+        self.add_output(Mission.TOTAL_FUEL_MULTI, val=0.0, shape=n, units='lbm')
+        self.add_output(Mission.TOTAL_FUEL_VOLUME_MULTI, val=0.0, shape=n, units='galUS')
 
     def setup_partials(self):
         phase_engine_map = self.options['phase_engine_map']

@@ -136,7 +136,7 @@ if __name__ == '__main__':
 
     prob.run_aviary_problem()
 
-    print('Success:', prob.result.success)
+    print('\nSuccess:', not prob.result)
     from aviary.variable_info.variables import Mission
 
     print('Total fuel (lbm):', prob.get_val(Mission.TOTAL_FUEL, units='lbm'))
