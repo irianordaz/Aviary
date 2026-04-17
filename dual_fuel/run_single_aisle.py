@@ -14,20 +14,24 @@ phase_info = deepcopy(phase_info)
 
 inputs = deepcopy(lsa2_inputs)
 
-engine = EngineTableBuilder(csv_path='models/engines/turbofan_22k.csv')
-
 inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
+inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
+
+engine1 = EngineTableBuilder(csv_path='models/engines/turbofan_22k.csv')
 inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
+
+# engine2 = EngineTableBuilder(csv_path='aviary/models/engines/turbofan_28k.csv')
+# inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 28928.1, 'lbf')
+# inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 28928.1, 'lbf')
 
 if __name__ == '__main__':
     prob = AviaryProblem()
 
     prob.load_inputs(inputs, phase_info)
 
-    prob.load_external_subsystems([engine])
+    prob.load_external_subsystems([engine1])
 
     prob.check_and_preprocess_inputs()
 
