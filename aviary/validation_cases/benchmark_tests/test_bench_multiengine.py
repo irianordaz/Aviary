@@ -7,13 +7,13 @@ from openmdao.core.problem import _clear_problem_names
 from openmdao.utils.assert_utils import assert_near_equal
 from openmdao.utils.testing_utils import require_pyoptsparse, use_tempdirs
 
-from aviary.models.missions.energy_state_default import phase_info
 from aviary.core.aviary_problem import AviaryProblem
 from aviary.models.aircraft.multi_engine_single_aisle.multi_engine_single_aisle_data import (
     engine_1_inputs,
     engine_2_inputs,
     inputs,
 )
+from aviary.models.missions.energy_state_default import phase_info
 from aviary.subsystems.propulsion.utils import build_engine_deck
 from aviary.variable_info.enums import ThrottleAllocation
 from aviary.variable_info.variables import Aircraft
@@ -31,8 +31,13 @@ local_phase_info['cruise']['user_options']['mach_optimize'] = False
 local_phase_info['cruise']['user_options']['mach_polynomial_order'] = 1
 local_phase_info['cruise']['user_options']['altitude_optimize'] = False
 local_phase_info['cruise']['user_options']['altitude_polynomial_order'] = 1
-local_phase_info['cruise']['user_options']['altitude_bounds'] = ((32000.0, 34000.0), 'ft')
-local_phase_info['cruise']['user_options']['throttle_enforcement'] = 'path_constraint'
+local_phase_info['cruise']['user_options']['altitude_bounds'] = (
+    (32000.0, 34000.0),
+    'ft',
+)
+local_phase_info['cruise']['user_options']['throttle_enforcement'] = (
+    'path_constraint'
+)
 
 local_phase_info['descent']['user_options']['mach_optimize'] = False
 local_phase_info['descent']['user_options']['mach_polynomial_order'] = 1
@@ -58,8 +63,12 @@ class MultiengineTestcase(unittest.TestCase):
         method = ThrottleAllocation.FIXED
 
         test_phase_info['climb']['user_options']['throttle_allocation'] = method
-        test_phase_info['cruise']['user_options']['throttle_allocation'] = method
-        test_phase_info['descent']['user_options']['throttle_allocation'] = method
+        test_phase_info['cruise']['user_options']['throttle_allocation'] = (
+            method
+        )
+        test_phase_info['descent']['user_options']['throttle_allocation'] = (
+            method
+        )
 
         engine1 = build_engine_deck(engine_1_inputs)
         engine1.name = 'engine_1'
@@ -87,9 +96,15 @@ class MultiengineTestcase(unittest.TestCase):
 
         self.assertTrue(prob.result.success)
 
-        alloc_climb = prob.get_val('traj.climb.parameter_vals:throttle_allocations')
-        alloc_cruise = prob.get_val('traj.cruise.parameter_vals:throttle_allocations')
-        alloc_descent = prob.get_val('traj.descent.parameter_vals:throttle_allocations')
+        alloc_climb = prob.get_val(
+            'traj.climb.parameter_vals:throttle_allocations'
+        )
+        alloc_cruise = prob.get_val(
+            'traj.cruise.parameter_vals:throttle_allocations'
+        )
+        alloc_descent = prob.get_val(
+            'traj.descent.parameter_vals:throttle_allocations'
+        )
 
         assert_near_equal(alloc_climb[0], 0.5, tolerance=1e-3)
         assert_near_equal(alloc_cruise[0], 0.5, tolerance=1e-3)
@@ -101,8 +116,12 @@ class MultiengineTestcase(unittest.TestCase):
         method = ThrottleAllocation.STATIC
 
         test_phase_info['climb']['user_options']['throttle_allocation'] = method
-        test_phase_info['cruise']['user_options']['throttle_allocation'] = method
-        test_phase_info['descent']['user_options']['throttle_allocation'] = method
+        test_phase_info['cruise']['user_options']['throttle_allocation'] = (
+            method
+        )
+        test_phase_info['descent']['user_options']['throttle_allocation'] = (
+            method
+        )
 
         engine1 = build_engine_deck(engine_1_inputs)
         engine2 = build_engine_deck(engine_2_inputs)
@@ -126,9 +145,15 @@ class MultiengineTestcase(unittest.TestCase):
 
         prob.run_aviary_problem(suppress_solver_print=True)
 
-        alloc_climb = prob.get_val('traj.climb.parameter_vals:throttle_allocations')
-        alloc_cruise = prob.get_val('traj.cruise.parameter_vals:throttle_allocations')
-        alloc_descent = prob.get_val('traj.descent.parameter_vals:throttle_allocations')
+        alloc_climb = prob.get_val(
+            'traj.climb.parameter_vals:throttle_allocations'
+        )
+        alloc_cruise = prob.get_val(
+            'traj.cruise.parameter_vals:throttle_allocations'
+        )
+        alloc_descent = prob.get_val(
+            'traj.descent.parameter_vals:throttle_allocations'
+        )
 
         with self.subTest('climb_allocation'):
             assert_near_equal(alloc_climb[0], 0.5, tolerance=1e-2)
@@ -141,8 +166,12 @@ class MultiengineTestcase(unittest.TestCase):
         method = ThrottleAllocation.DYNAMIC
 
         test_phase_info['climb']['user_options']['throttle_allocation'] = method
-        test_phase_info['cruise']['user_options']['throttle_allocation'] = method
-        test_phase_info['descent']['user_options']['throttle_allocation'] = method
+        test_phase_info['cruise']['user_options']['throttle_allocation'] = (
+            method
+        )
+        test_phase_info['descent']['user_options']['throttle_allocation'] = (
+            method
+        )
 
         prob = AviaryProblem(verbosity=0)
 
@@ -168,7 +197,9 @@ class MultiengineTestcase(unittest.TestCase):
 
         alloc_climb = prob.get_val('traj.climb.controls:throttle_allocations')
         alloc_cruise = prob.get_val('traj.cruise.controls:throttle_allocations')
-        alloc_descent = prob.get_val('traj.descent.controls:throttle_allocations')
+        alloc_descent = prob.get_val(
+            'traj.descent.controls:throttle_allocations'
+        )
 
         with self.subTest('cruise_allocation'):
             # Cruise is pretty constant, check exact value.
