@@ -21,9 +21,10 @@ inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = MultiEngineTableBuilder(
-    phase_csv_map={
-        'climb': 'models/engines/turbofan_22k.csv',
-        'cruise': 'aviary/models/engines/turbofan_28k.csv',
+    phase_engine_map={
+        'climb': 'models/engines/turbofan_28k.csv',
+        # 'cruise': 'models/engines/turbofan_28k.csv',
+        'cruise': 'models/engines/turbofan_22k.csv',
         'descent': 'models/engines/turbofan_22k.csv',
     }
 )
