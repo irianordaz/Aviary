@@ -80,7 +80,6 @@ from aviary.variable_info.variables import Aircraft
 from multi_fuel.table_builder import MultiEngineTableBuilder
 
 phase_info = deepcopy(phase_info)
-
 inputs = deepcopy(lsa2_inputs)
 
 inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')

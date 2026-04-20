@@ -29,7 +29,7 @@ from copy import deepcopy
 
 import openmdao.api as om
 from openmdao.core.problem import _clear_problem_names
-from openmdao.utils.assert_utils import assert_near_equal, assert_warning
+from openmdao.utils.assert_utils import assert_near_equal
 from openmdao.utils.testing_utils import require_pyoptsparse, use_tempdirs
 
 from aviary.core.aviary_problem import AviaryProblem

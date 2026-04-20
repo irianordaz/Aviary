@@ -166,20 +166,32 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
             density = entry[1]
 
             self.declare_partials(
-                Mission.TOTAL_FUEL_MULTI, f'mass_start_{phase}',
-                rows=[idx], cols=[0], val=1.0,
+                Mission.TOTAL_FUEL_MULTI,
+                f'mass_start_{phase}',
+                rows=[idx],
+                cols=[0],
+                val=1.0,
             )
             self.declare_partials(
-                Mission.TOTAL_FUEL_MULTI, f'mass_end_{phase}',
-                rows=[idx], cols=[0], val=-1.0,
+                Mission.TOTAL_FUEL_MULTI,
+                f'mass_end_{phase}',
+                rows=[idx],
+                cols=[0],
+                val=-1.0,
             )
             self.declare_partials(
-                Mission.TOTAL_FUEL_VOLUME_MULTI, f'mass_start_{phase}',
-                rows=[idx], cols=[0], val=1.0 / density,
+                Mission.TOTAL_FUEL_VOLUME_MULTI,
+                f'mass_start_{phase}',
+                rows=[idx],
+                cols=[0],
+                val=1.0 / density,
             )
             self.declare_partials(
-                Mission.TOTAL_FUEL_VOLUME_MULTI, f'mass_end_{phase}',
-                rows=[idx], cols=[0], val=-1.0 / density,
+                Mission.TOTAL_FUEL_VOLUME_MULTI,
+                f'mass_end_{phase}',
+                rows=[idx],
+                cols=[0],
+                val=-1.0 / density,
             )
 
     def compute(self, inputs, outputs):
@@ -369,9 +381,7 @@ class MultiEngineTableBuilder(EngineModel):
                 name=f'{name}_{phase}', csv_path=csv, options=opts
             )
 
-    def configure_phase_info(
-        self, phase_info: dict, propulsion_name: str = 'propulsion'
-    ) -> dict:
+    def configure_phase_info(self, phase_info: dict, propulsion_name: str = 'propulsion') -> dict:
         """Inject phase names into subsystem_options for engine deck dispatch.
 
         Modifies the provided phase_info dictionary in-place by injecting the
@@ -426,9 +436,7 @@ class MultiEngineTableBuilder(EngineModel):
             phase_opts.setdefault('subsystem_options', {})
             phase_opts['subsystem_options'].setdefault(propulsion_name, {})
             phase_opts['subsystem_options'][propulsion_name].setdefault(self.name, {})
-            phase_opts['subsystem_options'][propulsion_name][self.name][
-                'phase_name'
-            ] = phase_name
+            phase_opts['subsystem_options'][propulsion_name][self.name]['phase_name'] = phase_name
         return phase_info
 
     def get_post_mission_promotes_outputs(self):
@@ -451,64 +459,6 @@ class MultiEngineTableBuilder(EngineModel):
         build_post_mission : Creates the component that produces these outputs.
         """
         return [Mission.TOTAL_FUEL_MULTI]
-
-    def build_post_mission(
-        self,
-        aviary_inputs=None,
-        mission_info=None,
-        subsystem_options=None,
-        phase_mission_bus_lengths=None,
-    ):
-        """Build the post-mission fuel burn accounting component.
-
-        Creates and returns a MultiEngineFuelBurnComp OpenMDAO component that
-        computes total per-engine fuel burn (both mass and volume) from the
-    mass inputs provided by trajectory phase timeseries. This component is
-        added to the post-mission subsystem and receives mass data from each
-        configured mission phase.
-
-        The component sums fuel burned across phases that share the same engine
-        deck and fuel density pair, producing separate outputs for each unique
-        combination. This enables tracking fuel consumption by fuel type when
-        different fuels are used across phases.
-
-        Parameters
-        ----------
-        aviary_inputs : AviaryValues, optional
-            The Aviary inputs containing aircraft and engine configuration.
-            Not used by this method but included for interface compatibility.
-        mission_info : dict, optional
-            Information about the mission configuration. Not used by this method.
-        subsystem_options : dict, optional
-            Options for subsystems. Not used by this method.
-        phase_mission_bus_lengths : list, optional
-            Lengths of mission bus segments. Not used by this method.
-
-        Returns
-        -------
-        MultiEngineFuelBurnComp or None
-            A configured MultiEngineFuelBurnComp instance if phase_engine_map
-            is non-empty, or None if no phases are configured.
-
-        Notes
-        -----
-        The returned component must have its inputs connected to trajectory
-        mass timeseries via get_traj_connections. The component computes:
-
-            fuel_mass = mass_start - mass_end
-
-        for each phase and aggregates by unique (csv, density) pair.
-
-        See Also
-        --------
-        get_traj_connections : Returns the connections needed for this component.
-        MultiEngineFuelBurnComp : The component class that performs the computation.
-        """
-        if not self.phase_engine_map:
-            return None
-        return MultiEngineFuelBurnComp(
-            phase_engine_map=self.phase_engine_map,
-        )
 
     def get_traj_connections(self, regular_phases):
         """Return trajectory variable connections for fuel burn component inputs.
@@ -561,16 +511,20 @@ class MultiEngineTableBuilder(EngineModel):
         for phase in self.phase_engine_map:
             if phase not in regular_phases:
                 continue
-            connections.append((
-                f'traj.{phase}.timeseries.mass',
-                f'{self.name}.mass_start_{phase}',
-                [0],
-            ))
-            connections.append((
-                f'traj.{phase}.timeseries.mass',
-                f'{self.name}.mass_end_{phase}',
-                [-1],
-            ))
+            connections.append(
+                (
+                    f'traj.{phase}.timeseries.mass',
+                    f'{self.name}.mass_start_{phase}',
+                    [0],
+                )
+            )
+            connections.append(
+                (
+                    f'traj.{phase}.timeseries.mass',
+                    f'{self.name}.mass_end_{phase}',
+                    [-1],
+                )
+            )
         return connections
 
     def _default_engine(self) -> EngineTableBuilder:
@@ -616,36 +570,36 @@ class MultiEngineTableBuilder(EngineModel):
     def build_pre_mission(self, aviary_inputs, subsystem_options=None):
         """Build the pre-mission subsystem using the first configured engine deck.
 
-        Delegates pre-mission subsystem construction to the default engine
-        (the first engine in phase_engine_map). The pre-mission subsystem
- typically handles operations such as takeoff, climb to cruise altitude,
-        and any other activities that occur before the main mission phases.
+               Delegates pre-mission subsystem construction to the default engine
+               (the first engine in phase_engine_map). The pre-mission subsystem
+        typically handles operations such as takeoff, climb to cruise altitude,
+               and any other activities that occur before the main mission phases.
 
-        The method uses _default_engine to select the appropriate engine model
-        and forwards all arguments to its build_pre_mission method. This ensures
-        consistent engine configuration between pre-mission and mission phases.
+               The method uses _default_engine to select the appropriate engine model
+               and forwards all arguments to its build_pre_mission method. This ensures
+               consistent engine configuration between pre-mission and mission phases.
 
         Parameters
         ----------
-        aviary_inputs : AviaryValues
-            The Aviary inputs containing aircraft configuration, engine sizing
-            data, and other mission parameters. Forwarded to the engine's
-            build_pre_mission method.
-        subsystem_options : dict, optional
-            Additional subsystem options for the pre-mission phase. Forwarded
-            to the engine's build_pre_mission method.
+               aviary_inputs : AviaryValues
+                   The Aviary inputs containing aircraft configuration, engine sizing
+                   data, and other mission parameters. Forwarded to the engine's
+                   build_pre_mission method.
+               subsystem_options : dict, optional
+                   Additional subsystem options for the pre-mission phase. Forwarded
+                   to the engine's build_pre_mission method.
 
         Returns
         -------
-        OpenMDAO Component or Group
-            The pre-mission subsystem built by the default engine. This may be
-            a component or a group containing multiple components depending on
-            the engine configuration.
+               OpenMDAO Component or Group
+                   The pre-mission subsystem built by the default engine. This may be
+                   a component or a group containing multiple components depending on
+                   the engine configuration.
 
         See Also
         --------
-        _default_engine : Selects the engine used for this operation.
-        EngineTableBuilder.build_pre_mission : The underlying implementation.
+               _default_engine : Selects the engine used for this operation.
+               EngineTableBuilder.build_pre_mission : The underlying implementation.
         """
         return self._default_engine().build_pre_mission(aviary_inputs, subsystem_options)
 
@@ -715,3 +669,61 @@ class MultiEngineTableBuilder(EngineModel):
                 f'Available phases: {available}'
             )
         return engine.build_mission(num_nodes, aviary_inputs, user_options, subsystem_options)
+
+    def build_post_mission(
+        self,
+        aviary_inputs=None,
+        mission_info=None,
+        subsystem_options=None,
+        phase_mission_bus_lengths=None,
+    ):
+        """Build the post-mission fuel burn accounting component.
+
+            Creates and returns a MultiEngineFuelBurnComp OpenMDAO component that
+            computes total per-engine fuel burn (both mass and volume) from the
+        mass inputs provided by trajectory phase timeseries. This component is
+            added to the post-mission subsystem and receives mass data from each
+            configured mission phase.
+
+            The component sums fuel burned across phases that share the same engine
+            deck and fuel density pair, producing separate outputs for each unique
+            combination. This enables tracking fuel consumption by fuel type when
+            different fuels are used across phases.
+
+        Parameters
+        ----------
+            aviary_inputs : AviaryValues, optional
+                The Aviary inputs containing aircraft and engine configuration.
+                Not used by this method but included for interface compatibility.
+            mission_info : dict, optional
+                Information about the mission configuration. Not used by this method.
+            subsystem_options : dict, optional
+                Options for subsystems. Not used by this method.
+            phase_mission_bus_lengths : list, optional
+                Lengths of mission bus segments. Not used by this method.
+
+        Returns
+        -------
+            MultiEngineFuelBurnComp or None
+                A configured MultiEngineFuelBurnComp instance if phase_engine_map
+                is non-empty, or None if no phases are configured.
+
+        Notes
+        -----
+            The returned component must have its inputs connected to trajectory
+            mass timeseries via get_traj_connections. The component computes:
+
+                fuel_mass = mass_start - mass_end
+
+            for each phase and aggregates by unique (csv, density) pair.
+
+        See Also
+        --------
+            get_traj_connections : Returns the connections needed for this component.
+            MultiEngineFuelBurnComp : The component class that performs the computation.
+        """
+        if not self.phase_engine_map:
+            return None
+        return MultiEngineFuelBurnComp(
+            phase_engine_map=self.phase_engine_map,
+        )
