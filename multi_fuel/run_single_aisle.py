@@ -44,8 +44,8 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = MultiEngineTableBuilder(
     phase_engine_map={
-        'climb': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
-        'cruise': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
+        'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
+        'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
         'descent': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
     },
 )
@@ -98,3 +98,11 @@ if __name__ == '__main__':
         'Per-engine fuel (galUS):',
         prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS'),
     )
+    print('Sum TOTAL_FUEL_MULTI:', sum(prob.get_val(TOTAL_FUEL_MULTI, units='lbm')))
+    print(Aircraft.Engine.MASS, prob.get_val(Aircraft.Engine.MASS, units='lbm'))
+    print(Mission.RESERVE_FUEL, prob.get_val(Mission.RESERVE_FUEL, units='lbm'))
+    print(Mission.TOTAL_RESERVE_FUEL, prob.get_val(Mission.TOTAL_RESERVE_FUEL, units='lbm'))
+    print(Mission.BLOCK_FUEL, prob.get_val(Mission.BLOCK_FUEL, units='lbm'))
+    print(Mission.Taxi.FUEL_TAXI_OUT, prob.get_val(Mission.Taxi.FUEL_TAXI_OUT, units='lbm'))
+    print(Mission.Takeoff.FUEL, prob.get_val(Mission.Takeoff.FUEL, units='lbm'))
+    print(Mission.Taxi.FUEL_TAXI_IN, prob.get_val(Mission.Taxi.FUEL_TAXI_IN, units='lbm'))
