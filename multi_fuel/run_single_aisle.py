@@ -44,9 +44,9 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = MultiEngineTableBuilder(
     phase_engine_map={
-        'climb': ('models/engines/turbofan_28k.csv', 6.7),
-        'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-        'descent': ('models/engines/turbofan_22k.csv', 6.4),
+        'climb': ('multi_fuel/engines/turbofan_28k.csv', 6.7),
+        'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
+        'descent': ('multi_fuel/engines/turbofan_24k_1.csv', 1000),
     },
 )
 
