@@ -249,6 +249,81 @@ class MultiEngineTableBuilder(SubsystemBuilder):
             raise ValueError(f'{self.name}: phase_engine_map is empty.')
         return next(iter(self._phase_engines.values()))
 
+    def configure_phase_info(self, phase_info: dict) -> dict:
+        """Inject phase name into each phase's ``subsystem_options`` entry.
+
+        Modifies ``phase_info`` in place so that when the mission ODE calls
+        ``build_mission`` on this subsystem for a given phase, the
+        ``subsystem_options`` argument contains ``phase_name``. That key is
+        used by ``build_mission`` to dispatch to the correct per-phase engine
+        deck from ``phase_engine_map``.
+
+        Parameters
+        ----------
+        phase_info : dict
+            The phase_info dictionary to configure. ``pre_mission`` and
+            ``post_mission`` keys are skipped.
+
+        Returns
+        -------
+        dict
+            The same ``phase_info`` dict, with ``phase_name`` set at
+            ``phase_info[phase]['subsystem_options'][self.name]['phase_name']``.
+        """
+        skip = {'pre_mission', 'post_mission'}
+        for phase_name, phase_opts in phase_info.items():
+            if phase_name in skip:
+                continue
+            phase_opts.setdefault('subsystem_options', {}).setdefault(self.name, {})[
+                'phase_name'
+            ] = phase_name
+        return phase_info
+
+    def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
+        """Build the per-phase engine deck's mission component.
+
+        Reads ``phase_name`` from ``subsystem_options`` (set by
+        ``configure_phase_info``) and delegates to the ``EngineTableBuilder``
+        configured for that phase in ``phase_engine_map``. The resulting engine
+        group is added to the phase ODE; its outputs remain at local paths
+        (see ``mission_outputs``) so they do not collide with the main
+        propulsion subsystem that is built from the engine returned by
+        ``get_default_engine``.
+        """
+        if not subsystem_options:
+            return None
+        phase_name = subsystem_options.get('phase_name')
+        if phase_name is None:
+            return None
+        engine = self._phase_engines.get(phase_name)
+        if engine is None:
+            return None
+        return engine.build_mission(
+            num_nodes=num_nodes,
+            aviary_inputs=aviary_inputs,
+            user_options=user_options,
+            subsystem_options={},
+        )
+
+    def mission_inputs(self, aviary_inputs=None, user_options=None, subsystem_options=None):
+        """Promote all inputs of the per-phase engine group.
+
+        The per-phase engine requires standard dynamic inputs (Mach, altitude,
+        throttle, etc.); promoting with ``['*']`` lets them connect to the
+        same sources used by the main propulsion subsystem.
+        """
+        return ['*']
+
+    def mission_outputs(self, aviary_inputs=None, user_options=None, subsystem_options=None):
+        """Do not promote the per-phase engine's outputs.
+
+        PropulsionMission already promotes the canonical
+        ``Dynamic.Vehicle.Propulsion.*`` outputs. Promoting the per-phase
+        engine's outputs would collide with those, so we keep them local
+        under ``<phase ODE>/<self.name>/`` instead.
+        """
+        return []
+
     def build_post_mission(
         self,
         aviary_inputs=None,

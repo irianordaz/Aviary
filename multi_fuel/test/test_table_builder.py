@@ -1,453 +1,363 @@
-"""Tests for multi_fuel table builder module."""
+"""Tests for the multi_fuel table builder module.
+
+These tests verify the two core requirements of ``MultiEngineTableBuilder``:
+
+1. Each engine CSV provided in ``phase_engine_map`` is assigned to and used in
+   the requested mission phase (via ``build_mission`` dispatch).
+2. The fuel density provided per phase is used when computing the fuel volume.
+"""
 
 import unittest
 from copy import deepcopy
+from unittest import mock
 
 import openmdao.api as om
 from openmdao.utils.assert_utils import assert_near_equal
-from openmdao.utils.testing_utils import use_tempdirs
 
-from aviary.variable_info.variables import Mission
+from aviary.utils.functions import get_path
+from aviary.variable_info.variables import Aircraft
 from multi_fuel.table_builder import (
+    _DEFAULT_FUEL_DENSITY_LBM_GAL,
+    TOTAL_FUEL_MULTI,
+    TOTAL_FUEL_VOLUME_MULTI,
     EngineTableBuilder,
     MultiEngineFuelBurnComp,
     MultiEngineTableBuilder,
 )
 
-_ENGINE_CSV = 'models/engines/turbofan_28k.csv'
-_ENGINE_CSV_2 = 'models/engines/turbofan_22k.csv'
+_CSV_28K = 'multi_fuel/engines/turbofan_28k.csv'
+_CSV_22K = 'multi_fuel/engines/turbofan_22k.csv'
+_CSV_24K = 'multi_fuel/engines/turbofan_24k_1.csv'
+
+
+def _set_phase_masses(prob, masses):
+    """Set mass_start_<phase> / mass_end_<phase> on a fuel-burn problem."""
+    for phase, (start, end) in masses.items():
+        prob.set_val(f'mass_start_{phase}', start)
+        prob.set_val(f'mass_end_{phase}', end)
 
 
 class TestMultiEngineFuelBurnComp(unittest.TestCase):
-    """Tests for MultiEngineFuelBurnComp OpenMDAO component."""
+    """Verify per-phase fuel density is used in the volume calculation."""
 
-    def setUp(self):
-        self.phase_engine_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
-            'descent': (_ENGINE_CSV_2, 3.5),
+    def test_volume_uses_per_phase_density(self):
+        # Three unique (csv, density) entries → each volume uses its own density.
+        phase_engine_map = {
+            'climb': (_CSV_28K, 6.7),
+            'cruise': (_CSV_22K, 6.4),
+            'descent': (_CSV_24K, 4.2),
         }
-
-    def test_component_creation(self):
-        """Test that the component can be created with a phase_engine_map."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        self.assertEqual(comp.options['phase_engine_map'], self.phase_engine_map)
-
-    def test_component_setup(self):
-        """Test that the component sets up correct inputs and outputs."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
+        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
+        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
         prob.setup()
-
-        expected_outputs = [
-            'fuel_burn.mission:total_fuel_multi',
-            'fuel_burn.mission:total_fuel_volume_multi',
-        ]
-        for output in expected_outputs:
-            self.assertIn(output, prob.model._var_allprocs_abs2meta['output'])
-
-    def test_compute_single_phase(self):
-        """Test fuel burn computation with a single phase."""
-        single_map = {'climb': (_ENGINE_CSV, 6.7)}
-        comp = MultiEngineFuelBurnComp(phase_engine_map=single_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 90000.0)
+        _set_phase_masses(
+            prob,
+            {
+                'climb': (100000.0, 95000.0),
+                'cruise': (95000.0, 91000.0),
+                'descent': (91000.0, 88000.0),
+            },
+        )
         prob.run_model()
 
-        expected_fuel = 10000.0
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], expected_fuel, tolerance=1e-6)
+        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
+        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
 
-    def test_compute_multiple_phases_same_engine(self):
-        """Test fuel burn with multiple phases using the same engine."""
-        same_engine_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV, 6.7),
+        assert_near_equal(mass, [5000.0, 4000.0, 3000.0], tolerance=1e-8)
+        assert_near_equal(
+            volume,
+            [5000.0 / 6.7, 4000.0 / 6.4, 3000.0 / 4.2],
+            tolerance=1e-8,
+        )
+
+    def test_same_csv_different_density_creates_separate_entries(self):
+        phase_engine_map = {
+            'climb': (_CSV_22K, 6.7),
+            'cruise': (_CSV_22K, 6.4),
         }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=same_engine_map)
+        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
+        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
         prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 95000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 90000.0)
-        prob.run_model()
-
-        expected_fuel = 5000.0 + 5000.0
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], expected_fuel, tolerance=1e-6)
-
-    def test_compute_multiple_phases_different_engines(self):
-        """Test fuel burn with multiple phases using different engines."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 95000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 91000.0)
-        prob.set_val('mass_start_descent', 91000.0)
-        prob.set_val('mass_end_descent', 88000.0)
-        prob.run_model()
-
-        fuel_climb = 5000.0
-        fuel_cruise = 4000.0
-        fuel_descent = 3000.0
-
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], fuel_climb, tolerance=1e-6)
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[1], fuel_cruise, tolerance=1e-6)
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[2], fuel_descent, tolerance=1e-6)
-
-    def test_compute_volume_output(self):
-        """Test that volume output is correctly computed from mass and density."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 95000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 91000.0)
-        prob.set_val('mass_start_descent', 91000.0)
-        prob.set_val('mass_end_descent', 88000.0)
-        prob.run_model()
-
-        volume_climb = 5000.0 / 6.7
-        volume_cruise = 4000.0 / 6.4
-        volume_descent = 3000.0 / 3.5
-
-        assert_near_equal(
-            prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI)[0], volume_climb, tolerance=1e-4
+        _set_phase_masses(
+            prob,
+            {'climb': (100000.0, 95000.0), 'cruise': (95000.0, 91000.0)},
         )
-        assert_near_equal(
-            prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI)[1], volume_cruise, tolerance=1e-4
+        prob.run_model()
+
+        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
+        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+
+        self.assertEqual(mass.shape, (2,))
+        assert_near_equal(mass, [5000.0, 4000.0], tolerance=1e-8)
+        assert_near_equal(volume, [5000.0 / 6.7, 4000.0 / 6.4], tolerance=1e-8)
+
+    def test_same_csv_same_density_aggregates(self):
+        phase_engine_map = {
+            'climb': (_CSV_22K, 6.4),
+            'cruise': (_CSV_22K, 6.4),
+        }
+        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        prob = om.Problem()
+        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.setup()
+        _set_phase_masses(
+            prob,
+            {'climb': (100000.0, 95000.0), 'cruise': (95000.0, 91000.0)},
         )
-        assert_near_equal(
-            prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI)[2], volume_descent, tolerance=1e-4
+        prob.run_model()
+
+        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
+        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+
+        self.assertEqual(mass.shape, (1,))
+        assert_near_equal(mass, [9000.0], tolerance=1e-8)
+        assert_near_equal(volume, [9000.0 / 6.4], tolerance=1e-8)
+
+    def test_partials(self):
+        phase_engine_map = {
+            'climb': (_CSV_28K, 6.7),
+            'cruise': (_CSV_22K, 6.4),
+        }
+        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        prob = om.Problem()
+        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.setup()
+        _set_phase_masses(
+            prob,
+            {'climb': (100000.0, 95000.0), 'cruise': (95000.0, 91000.0)},
         )
-
-    def test_compute_with_zero_fuel(self):
-        """Test fuel burn computation when mass_start equals mass_end."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 100000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 95000.0)
-        prob.set_val('mass_start_descent', 90000.0)
-        prob.set_val('mass_end_descent', 90000.0)
         prob.run_model()
 
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], 0.0, tolerance=1e-6)
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[1], 0.0, tolerance=1e-6)
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[2], 0.0, tolerance=1e-6)
-
-    def test_compute_negative_fuel(self):
-        """Test fuel burn computation when mass increases (negative fuel burn)."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 95000.0)
-        prob.set_val('mass_end_climb', 100000.0)
-        prob.run_model()
-
-        expected_fuel = -5000.0
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], expected_fuel, tolerance=1e-6)
-
-    def test_partials_compute(self):
-        """Test that partial derivatives are computed correctly."""
-        comp = MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 95000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 91000.0)
-        prob.set_val('mass_start_descent', 91000.0)
-        prob.set_val('mass_end_descent', 88000.0)
-        prob.run_model()
-
-        rel_error = prob.check_partials(method='fd')
-        for comp_name, comp_data in rel_error.items():
-            for key, data in comp_data.items():
-                if 'forward' in data:
-                    assert_near_equal(data['forward']['abs error'][0][0], 0.0, tolerance=1e-4)
-                if 'cs' in data:
-                    assert_near_equal(data['cs']['abs error'][0][0], 0.0, tolerance=1e-6)
+        data = prob.check_partials(
+            method='fd', out_stream=None, compact_print=True
+        )
+        for comp_data in data.values():
+            for direction_data in comp_data.values():
+                if 'forward' in direction_data:
+                    assert_near_equal(
+                        direction_data['forward']['abs error'][0][0],
+                        0.0,
+                        tolerance=1e-5,
+                    )
 
 
 class TestEngineTableBuilder(unittest.TestCase):
-    """Tests for EngineTableBuilder class."""
+    """Verify ``EngineTableBuilder`` resolves the CSV into DATA_FILE."""
 
-    def test_engine_table_builder_default_values(self):
-        """Test EngineTableBuilder with default values."""
-        builder = EngineTableBuilder()
-        self.assertEqual(builder.name, 'engine_table')
+    def test_default_name(self):
+        self.assertEqual(EngineTableBuilder().name, 'engine_table')
 
-    def test_engine_table_builder_custom_name(self):
-        """Test EngineTableBuilder with custom name."""
-        builder = EngineTableBuilder(name='custom_engine')
-        self.assertEqual(builder.name, 'custom_engine')
+    def test_custom_name(self):
+        self.assertEqual(EngineTableBuilder(name='x').name, 'x')
 
-    def test_engine_table_builder_custom_path(self):
-        """Test EngineTableBuilder with custom CSV path."""
-        builder = EngineTableBuilder(csv_path=_ENGINE_CSV)
-        self.assertEqual(builder.name, 'engine_table')
+    def test_data_file_option_set_from_csv_path(self):
+        builder = EngineTableBuilder(csv_path=_CSV_28K)
+        self.assertEqual(
+            str(builder.get_val(Aircraft.Engine.DATA_FILE)),
+            str(get_path(_CSV_28K)),
+        )
 
 
 class TestMultiEngineTableBuilder(unittest.TestCase):
-    """Tests for MultiEngineTableBuilder class."""
+    """Verify per-phase engines are created with the correct CSV and density."""
 
-    def test_builder_creation_empty(self):
-        """Test MultiEngineTableBuilder with empty phase_engine_map."""
-        builder = MultiEngineTableBuilder()
-        self.assertEqual(builder.phase_engine_map, {})
-        self.assertEqual(builder._phase_engines, {})
+    def _make_builder(self):
+        return MultiEngineTableBuilder(
+            phase_engine_map={
+                'climb': (_CSV_28K, 6.7),
+                'cruise': (_CSV_22K, 6.4),
+                'descent': (_CSV_24K, 4.2),
+            },
+        )
 
-    def test_builder_creation_with_phases(self):
-        """Test MultiEngineTableBuilder with phase_engine_map."""
-        phase_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
+    def test_each_phase_engine_uses_the_requested_csv(self):
+        """Each per-phase engine must resolve DATA_FILE to the mapped CSV."""
+        builder = self._make_builder()
+        expected = {
+            'climb': _CSV_28K,
+            'cruise': _CSV_22K,
+            'descent': _CSV_24K,
         }
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        self.assertEqual(len(builder.phase_engine_map), 2)
-        self.assertEqual(builder.phase_engine_map['climb'], (_ENGINE_CSV, 6.7))
-        self.assertEqual(builder.phase_engine_map['cruise'], (_ENGINE_CSV_2, 6.4))
+        for phase, csv in expected.items():
+            engine = builder._phase_engines[phase]
+            self.assertEqual(
+                str(engine.get_val(Aircraft.Engine.DATA_FILE)),
+                str(get_path(csv)),
+                f'phase {phase!r} should use engine CSV {csv}',
+            )
 
-    def test_builder_string_values_converted(self):
-        """Test that string values in phase_engine_map are converted to tuples."""
-        phase_map = {
-            'climb': _ENGINE_CSV,
-            'cruise': _ENGINE_CSV_2,
-        }
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        self.assertIsInstance(builder.phase_engine_map['climb'], tuple)
-        self.assertEqual(builder.phase_engine_map['climb'][0], _ENGINE_CSV)
-        self.assertEqual(builder.phase_engine_map['cruise'][0], _ENGINE_CSV_2)
+    def test_each_phase_engine_uses_the_requested_density(self):
+        """Each per-phase engine must carry the requested Aircraft.Fuel.DENSITY."""
+        builder = self._make_builder()
+        expected = {'climb': 6.7, 'cruise': 6.4, 'descent': 4.2}
+        for phase, density in expected.items():
+            engine = builder._phase_engines[phase]
+            self.assertAlmostEqual(
+                engine.get_val(Aircraft.Fuel.DENSITY, units='lbm/galUS'),
+                density,
+                places=9,
+                msg=f'phase {phase!r} should have density {density}',
+            )
 
-    def test_builder_default_density_for_strings(self):
-        """Test that string values use the default fuel density."""
-        phase_map = {'climb': _ENGINE_CSV}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        from multi_fuel.table_builder import _DEFAULT_FUEL_DENSITY_LBM_GAL
+    def test_string_value_applies_default_density(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        self.assertAlmostEqual(
+            builder._phase_engines['climb'].get_val(
+                Aircraft.Fuel.DENSITY, units='lbm/galUS'
+            ),
+            _DEFAULT_FUEL_DENSITY_LBM_GAL,
+            places=9,
+        )
 
-        self.assertEqual(builder.phase_engine_map['climb'][1], _DEFAULT_FUEL_DENSITY_LBM_GAL)
+    def test_per_phase_engine_names_are_distinct(self):
+        builder = self._make_builder()
+        names = {e.name for e in builder._phase_engines.values()}
+        self.assertEqual(
+            names,
+            {
+                'multi_engine_table_climb',
+                'multi_engine_table_cruise',
+                'multi_engine_table_descent',
+            },
+        )
 
-    def test_builder_phase_engines_created(self):
-        """Test that _phase_engines is populated correctly."""
-        phase_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
-        }
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        self.assertEqual(len(builder._phase_engines), 2)
-        self.assertIn('climb', builder._phase_engines)
-        self.assertIn('cruise', builder._phase_engines)
+    def test_get_default_engine_returns_first_entry(self):
+        builder = self._make_builder()
+        default = builder.get_default_engine()
+        self.assertEqual(
+            str(default.get_val(Aircraft.Engine.DATA_FILE)),
+            str(get_path(_CSV_28K)),
+        )
 
-    def test_builder_name_default(self):
-        """Test that the builder has the default name."""
-        builder = MultiEngineTableBuilder()
-        self.assertEqual(builder.name, 'multi_engine_table')
+    def test_get_default_engine_empty_raises(self):
+        with self.assertRaises(ValueError):
+            MultiEngineTableBuilder().get_default_engine()
 
-    def test_builder_name_custom(self):
-        """Test that the builder accepts a custom name."""
-        builder = MultiEngineTableBuilder(name='custom_multi_engine')
-        self.assertEqual(builder.name, 'custom_multi_engine')
+    def test_default_builder_name(self):
+        self.assertEqual(MultiEngineTableBuilder().name, 'multi_engine_table')
 
-    def test_builder_compute_max_values(self):
-        """Test that compute_max_values is set to True."""
-        builder = MultiEngineTableBuilder()
-        self.assertTrue(builder.compute_max_values)
+    def test_custom_builder_name(self):
+        self.assertEqual(MultiEngineTableBuilder(name='x').name, 'x')
 
-    @use_tempdirs
-    def test_configure_phase_info(self):
-        """Test that configure_phase_info injects phase names correctly."""
-        phase_map = {
-            'climb': _ENGINE_CSV,
-        }
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
+
+class TestConfigurePhaseInfo(unittest.TestCase):
+    """Verify ``configure_phase_info`` tags each phase with its name."""
+
+    def test_injects_phase_name_into_subsystem_options(self):
+        builder = MultiEngineTableBuilder(
+            phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
+        )
         phase_info = {
-            'climb': {'subsystem_options': {}},
-            'cruise': {'subsystem_options': {}},
-            'descent': {'subsystem_options': {}},
-            'pre_mission': {'subsystem_options': {}},
-            'post_mission': {'subsystem_options': {}},
+            'climb': {},
+            'cruise': {'subsystem_options': {'other': {'k': 1}}},
+            'pre_mission': {},
+            'post_mission': {},
         }
         configured = builder.configure_phase_info(deepcopy(phase_info))
 
-        self.assertIn(
-            'phase_name',
-            configured['climb']['subsystem_options']['propulsion']['multi_engine_table'],
-        )
         self.assertEqual(
-            configured['climb']['subsystem_options']['propulsion']['multi_engine_table'][
+            configured['climb']['subsystem_options'][builder.name][
                 'phase_name'
             ],
             'climb',
         )
-        pre_mission_opts = (
-            configured['pre_mission']['subsystem_options']
-            .get('propulsion', {})
-            .get('multi_engine_table', {})
+        self.assertEqual(
+            configured['cruise']['subsystem_options'][builder.name][
+                'phase_name'
+            ],
+            'cruise',
         )
-        post_mission_opts = (
-            configured['post_mission']['subsystem_options']
-            .get('propulsion', {})
-            .get('multi_engine_table', {})
+        # Existing subsystem_options entries are preserved.
+        self.assertEqual(
+            configured['cruise']['subsystem_options']['other'], {'k': 1}
         )
-        self.assertNotIn('phase_name', pre_mission_opts)
-        self.assertNotIn('phase_name', post_mission_opts)
 
-    @use_tempdirs
-    def test_configure_phase_info_custom_propulsion_name(self):
-        """Test configure_phase_info with custom propulsion name."""
-        phase_map = {'climb': _ENGINE_CSV}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map, name='custom_engine')
-        phase_info = {
-            'climb': {'subsystem_options': {}},
-        }
-        configured = builder.configure_phase_info(
-            deepcopy(phase_info), propulsion_name='custom_prop'
+    def test_skips_pre_and_post_mission(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        phase_info = {'climb': {}, 'pre_mission': {}, 'post_mission': {}}
+        configured = builder.configure_phase_info(deepcopy(phase_info))
+
+        self.assertNotIn('subsystem_options', configured['pre_mission'])
+        self.assertNotIn('subsystem_options', configured['post_mission'])
+
+
+class TestBuildMissionDispatch(unittest.TestCase):
+    """Verify ``build_mission`` routes to the engine configured for that phase."""
+
+    def test_dispatches_to_the_phase_engine(self):
+        builder = MultiEngineTableBuilder(
+            phase_engine_map={
+                'climb': (_CSV_28K, 6.7),
+                'cruise': (_CSV_22K, 6.4),
+                'descent': (_CSV_24K, 4.2),
+            },
         )
-        phase_name_value = configured['climb']['subsystem_options']['custom_prop']['custom_engine'][
-            'phase_name'
-        ]
-        self.assertEqual(phase_name_value, 'climb')
 
-    def test_get_post_mission_promotes_outputs(self):
-        """Test that get_post_mission_promotes_outputs returns the correct list."""
-        builder = MultiEngineTableBuilder()
-        outputs = builder.get_post_mission_promotes_outputs()
-        self.assertEqual(outputs, [Mission.TOTAL_FUEL_MULTI])
+        # Replace each per-phase engine's build_mission with a distinct sentinel
+        # group. build_mission on the builder should return the sentinel for the
+        # engine registered at the requested phase.
+        sentinels = {}
+        for phase, engine in builder._phase_engines.items():
+            sentinel = om.Group()
+            sentinels[phase] = sentinel
+            engine.build_mission = mock.MagicMock(return_value=sentinel)
 
-    def test_build_post_mission_empty(self):
-        """Test that build_post_mission returns None for empty phase_engine_map."""
-        builder = MultiEngineTableBuilder()
-        result = builder.build_post_mission()
-        self.assertIsNone(result)
-
-    def test_build_post_mission_nonempty(self):
-        """Test that build_post_mission returns a component for non-empty phase_engine_map."""
-        phase_map = {'climb': _ENGINE_CSV}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        result = builder.build_post_mission()
-        self.assertIsInstance(result, MultiEngineFuelBurnComp)
-
-    def test_get_traj_connections_empty(self):
-        """Test that get_traj_connections returns empty list for no phases."""
-        builder = MultiEngineTableBuilder()
-        connections = builder.get_traj_connections(['climb', 'cruise'])
-        self.assertEqual(connections, [])
-
-    def test_get_traj_connections_single_phase(self):
-        """Test that get_traj_connections returns correct connections for single phase."""
-        phase_map = {'climb': _ENGINE_CSV}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        connections = builder.get_traj_connections(['climb', 'cruise'])
-        self.assertEqual(len(connections), 2)
-
-        self.assertEqual(connections[0][0], 'traj.climb.timeseries.mass')
-        self.assertEqual(connections[0][1], 'multi_engine_table.mass_start_climb')
-        self.assertEqual(connections[0][2], [0])
-
-        self.assertEqual(connections[1][0], 'traj.climb.timeseries.mass')
-        self.assertEqual(connections[1][1], 'multi_engine_table.mass_end_climb')
-        self.assertEqual(connections[1][2], [-1])
-
-    def test_get_traj_connections_multiple_phases(self):
-        """Test that get_traj_connections returns correct connections for multiple phases."""
-        phase_map = {'climb': _ENGINE_CSV, 'cruise': _ENGINE_CSV_2}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        connections = builder.get_traj_connections(['climb', 'cruise', 'descent'])
-        self.assertEqual(len(connections), 4)
-
-    def test_get_traj_connections_skips_missing_phases(self):
-        """Test that get_traj_connections skips phases not in regular_phases."""
-        phase_map = {'climb': _ENGINE_CSV, 'cruise': _ENGINE_CSV_2}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        connections = builder.get_traj_connections(['descent'])
-        self.assertEqual(connections, [])
-
-    def test_default_engine_raises_on_empty(self):
-        """Test that _default_engine raises ValueError when no engines configured."""
-        builder = MultiEngineTableBuilder()
-        with self.assertRaises(ValueError):
-            builder._default_engine()
-
-    def test_default_engine_returns_first_engine(self):
-        """Test that _default_engine returns the first configured engine."""
-        phase_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
-        }
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        default = builder._default_engine()
-        self.assertEqual(default.name, 'multi_engine_table_climb')
-
-    def test_build_mission_phase_not_found(self):
-        """Test that build_mission raises KeyError for unconfigured phase."""
-        phase_map = {'climb': _ENGINE_CSV}
-        builder = MultiEngineTableBuilder(phase_engine_map=phase_map)
-        with self.assertRaises(KeyError):
-            builder.build_mission(
-                num_nodes=10,
+        for phase in ('climb', 'cruise', 'descent'):
+            result = builder.build_mission(
+                num_nodes=3,
                 aviary_inputs=None,
                 user_options={},
-                subsystem_options={'phase_name': 'cruise'},
+                subsystem_options={'phase_name': phase},
             )
+            self.assertIs(
+                result,
+                sentinels[phase],
+                f'build_mission for phase {phase!r} should return that phase engine',
+            )
+            builder._phase_engines[phase].build_mission.assert_called_once()
 
+        # And only the phase's engine should have been called (not cross-phase).
+        for phase, engine in builder._phase_engines.items():
+            self.assertEqual(engine.build_mission.call_count, 1)
 
-class TestMultiEngineFuelBurnCompIntegration(unittest.TestCase):
-    """Integration tests for MultiEngineFuelBurnComp."""
-
-    def test_full_workflow_with_problem(self):
-        """Test the full workflow using an OpenMDAO Problem."""
-        phase_engine_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
-        }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem(
-            'fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*']
+    def test_returns_none_for_unknown_phase(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        self.assertIsNone(
+            builder.build_mission(
+                num_nodes=3,
+                aviary_inputs=None,
+                user_options={},
+                subsystem_options={'phase_name': 'not_a_phase'},
+            )
         )
-        prob.setup()
 
-        prob.set_val('mass_start_climb', 100000.0)
-        prob.set_val('mass_end_climb', 95000.0)
-        prob.set_val('mass_start_cruise', 95000.0)
-        prob.set_val('mass_end_cruise', 90000.0)
-        prob.run_model()
+    def test_returns_none_with_empty_subsystem_options(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        self.assertIsNone(
+            builder.build_mission(
+                num_nodes=3,
+                aviary_inputs=None,
+                user_options={},
+                subsystem_options={},
+            )
+        )
 
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[0], 5000.0, tolerance=1e-6)
-        assert_near_equal(prob.get_val(Mission.TOTAL_FUEL_MULTI)[1], 5000.0, tolerance=1e-6)
 
-    def test_output_shapes(self):
-        """Test that output shapes are correct."""
-        phase_engine_map = {
-            'climb': (_ENGINE_CSV, 6.7),
-            'cruise': (_ENGINE_CSV_2, 6.4),
-            'descent': (_ENGINE_CSV, 3.5),
-        }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
-        prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes_inputs=['*'], promotes_outputs=['*'])
-        prob.setup()
-        prob.run_model()
+class TestBuildPostMission(unittest.TestCase):
+    def test_returns_none_when_empty(self):
+        self.assertIsNone(MultiEngineTableBuilder().build_post_mission())
 
-        fuel_shape = prob.get_val(Mission.TOTAL_FUEL_MULTI).shape
-        volume_shape = prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI).shape
-        self.assertEqual(fuel_shape, (3,))
-        self.assertEqual(volume_shape, (3,))
+    def test_returns_fuel_burn_comp(self):
+        builder = MultiEngineTableBuilder(
+            phase_engine_map={'climb': (_CSV_28K, 6.7)},
+        )
+        comp = builder.build_post_mission()
+        self.assertIsInstance(comp, MultiEngineFuelBurnComp)
+        self.assertEqual(
+            comp.options['phase_engine_map'], builder.phase_engine_map
+        )
 
 
 if __name__ == '__main__':

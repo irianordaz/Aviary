@@ -44,14 +44,18 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = MultiEngineTableBuilder(
     phase_engine_map={
-        'climb': ('multi_fuel/engines/turbofan_28k.csv', 6.7),
+        'climb': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
         'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
-        'descent': ('multi_fuel/engines/turbofan_24k_1.csv', 1000),
+        'descent': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
     },
 )
 
 if __name__ == '__main__':
     prob = AviaryProblem()
+
+    # Tag each phase so MultiEngineTableBuilder.build_mission can dispatch to
+    # the CSV/density configured for that phase in phase_engine_map.
+    phase_info = engine.configure_phase_info(phase_info)
 
     prob.load_inputs(inputs, phase_info)
 

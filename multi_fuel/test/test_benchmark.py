@@ -1,27 +1,12 @@
-"""Benchmark test for the integrated multi-fuel solution.
+"""End-to-end benchmark for the multi-fuel single-aisle optimization.
 
-This module contains a benchmark test that validates the complete end-to-end
-workflow demonstrated in run_single_aisle.py. It constructs and runs a full
-AviaryProblem optimization for a Large Single Aisle 2 (LSA2) aircraft configured
-with different engine decks and fuel types across mission phases.
+Builds the full ``AviaryProblem`` used in ``run_single_aisle.py`` and verifies:
 
-The test validates:
-- Optimization convergence (success status)
-- Total fuel consumption is within expected range
-- Per-engine fuel burn arrays have correct shape
-- Per-engine fuel values are positive and reasonable
-- Fuel volume output is positive and reasonable
-- The multi-fuel outputs are consistent with the total fuel
-
-Mission Phases
---------------
-    climb   : turbofan_28k.csv with Jet-A fuel (6.7 lbm/galUS)
-    cruise  : turbofan_22k.csv with SAF blend fuel (6.4 lbm/galUS)
-    descent : turbofan_22k.csv with LNG fuel (6.4 lbm/galUS)
-
-The unique (csv, density) pairs are:
-    0: (turbofan_28k.csv, 6.7) - climb phase
-    1: (turbofan_22k.csv, 6.4) - cruise + descent phases (same CSV and density)
+- Each mission phase's ODE contains a per-phase engine subsystem built from the
+  CSV mapped to that phase in ``phase_engine_map``.
+- Total fuel volume equals total fuel mass divided by the per-phase density
+  (i.e., the density provided in ``phase_engine_map`` is the one used).
+- The optimization converges and produces physically reasonable totals.
 """
 
 import unittest
@@ -37,262 +22,121 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
     inputs as lsa2_inputs,
 )
 from aviary.models.missions.energy_state_default import phase_info
+from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft, Mission
-from multi_fuel.table_builder import MultiEngineTableBuilder
+from multi_fuel.table_builder import (
+    TOTAL_FUEL_MULTI,
+    TOTAL_FUEL_VOLUME_MULTI,
+    MultiEngineTableBuilder,
+)
+
+_PHASE_ENGINE_MAP = {
+    'climb': ('multi_fuel/engines/turbofan_28k.csv', 6.7),
+    'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
+    'descent': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
+}
+
+
+def _set_engine_inputs(inputs):
+    inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
+    inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
+    inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
+    inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
+    inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
+
+
+def _build_problem(phase_engine_map):
+    """Build (but do not yet run) an AviaryProblem mirroring ``run_single_aisle``."""
+    inputs = deepcopy(lsa2_inputs)
+    _set_engine_inputs(inputs)
+    phases = deepcopy(phase_info)
+
+    engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
+    phases = engine.configure_phase_info(phases)
+
+    prob = AviaryProblem(verbosity=0)
+    prob.load_inputs(inputs, phases)
+    prob.load_external_subsystems([engine.get_default_engine(), engine])
+    prob.check_and_preprocess_inputs()
+    prob.build_model()
+    engine.wire_trajectory(prob.model)
+    prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
+    prob.add_design_variables()
+    prob.add_objective()
+    prob.setup()
+    return prob, engine
 
 
 @use_tempdirs
 class MultiFuelBenchmarkTest(unittest.TestCase):
-    """Benchmark test for the integrated multi-fuel solution.
-
-    This test validates the complete end-to-end workflow for a multi-fuel
-    LSA2 aircraft optimization, ensuring the MultiEngineTableBuilder correctly
-    integrates with the Aviary framework and produces reasonable results.
-    """
+    """End-to-end benchmark for the multi-fuel LSA2 optimization."""
 
     def setUp(self):
-        """Set up common test fixtures."""
         om.clear_reports()
         _clear_problem_names()
 
-    @require_pyoptsparse(optimizer='IPOPT')
-    def test_multi_fuel_optimization_success(self):
-        """Test that the multi-fuel optimization converges successfully.
+    def test_each_phase_ode_contains_its_engine_subsystem(self):
+        """After ``build_model``, each phase's ODE must contain the per-phase engine.
 
-        Verifies that the AviaryProblem with MultiEngineTableBuilder
-        completes the optimization without errors and reports success.
+        ``MultiEngineTableBuilder.build_mission`` returns the per-phase engine's
+        mission group, which ``base_ode.add_subsystems`` adds under the builder's
+        name inside the ``external_subsystems`` group. The builder's per-phase
+        engine is identified by the CSV it resolves ``Aircraft.Engine.DATA_FILE``
+        to; we cross-check that each phase's engine has the expected CSV.
         """
-        om.clear_reports()
+        prob, engine = _build_problem(_PHASE_ENGINE_MAP)
 
-        phase_info_modified = deepcopy(phase_info)
-        inputs_modified = deepcopy(lsa2_inputs)
+        for phase, (csv, _) in _PHASE_ENGINE_MAP.items():
+            path = f'traj.phases.{phase}.rhs_all.solver_sub.{engine.name}'
+            subsys = prob.model._get_subsystem(path)
+            self.assertIsNotNone(
+                subsys,
+                f'Expected per-phase engine subsystem at {path}',
+            )
+            self.assertIsInstance(subsys, om.Group)
+            # Per-phase engine group must contain an EngineDeck interpolator,
+            # confirming the engine was actually constructed from a CSV.
+            self.assertIsNotNone(
+                subsys._get_subsystem('interpolation'),
+                f'Phase {phase!r} engine should contain an interpolation component '
+                f'built from CSV {csv}',
+            )
 
-        inputs_modified.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-        engine = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': ('models/engines/turbofan_28k.csv', 6.7),
-                'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-                'descent': ('models/engines/turbofan_22k.csv', 6.4),
-            },
-        )
-        phase_info_modified = engine.configure_phase_info(phase_info_modified)
-
-        prob = AviaryProblem(verbosity=0)
-        prob.load_inputs(inputs_modified, phase_info_modified)
-        prob.load_external_subsystems([engine])
-        prob.check_and_preprocess_inputs()
-        prob.build_model()
-        prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
-        prob.add_design_variables()
-        prob.add_objective()
-        prob.setup()
-        prob.run_aviary_problem(suppress_solver_print=True)
-
-        self.assertTrue(prob.result.success)  # type: ignore[attr-defined]
+            # The builder holds the engine that was dispatched for this phase;
+            # its DATA_FILE must match the CSV requested in phase_engine_map.
+            phase_engine = engine._phase_engines[phase]
+            self.assertEqual(
+                str(phase_engine.get_val(Aircraft.Engine.DATA_FILE)),
+                str(get_path(csv)),
+                f'Phase {phase!r} engine should use CSV {csv}',
+            )
 
     @require_pyoptsparse(optimizer='IPOPT')
-    def test_multi_fuel_fuel_burn_values(self):
-        """Test that fuel burn values are reasonable.
+    def test_optimization_converges_and_volumes_use_per_phase_density(self):
+        """Run the optimization and verify volume = mass / density per entry.
 
-        Verifies that:
-        - Total fuel is positive
-        - Per-engine fuel arrays have correct shape (2 unique csv/density pairs)
-        - Per-engine fuel values are positive
-        - Total fuel is approximately equal to sum of per-engine fuel
+        ``_PHASE_ENGINE_MAP`` maps each phase to a distinct CSV; with three
+        distinct CSVs the output arrays have three entries, one per
+        (csv, density) pair in insertion order.
         """
-        om.clear_reports()
-
-        phase_info_modified = deepcopy(phase_info)
-        inputs_modified = deepcopy(lsa2_inputs)
-
-        inputs_modified.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-        engine = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': ('models/engines/turbofan_28k.csv', 6.7),
-                'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-                'descent': ('models/engines/turbofan_22k.csv', 6.4),
-            },
-        )
-        phase_info_modified = engine.configure_phase_info(phase_info_modified)
-
-        prob = AviaryProblem(verbosity=0)
-        prob.load_inputs(inputs_modified, phase_info_modified)
-        prob.load_external_subsystems([engine])
-        prob.check_and_preprocess_inputs()
-        prob.build_model()
-        prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
-        prob.add_design_variables()
-        prob.add_objective()
-        prob.setup()
+        prob, _ = _build_problem(_PHASE_ENGINE_MAP)
         prob.run_aviary_problem(suppress_solver_print=True)
 
-        total_fuel = prob.get_val(Mission.TOTAL_FUEL, units='lbm')
-        fuel_multi = prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm')
-        fuel_volume = prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI, units='galUS')
-
-        self.assertGreater(total_fuel[0], 0.0)
-        self.assertEqual(fuel_multi.shape, (2,))
-        self.assertEqual(fuel_volume.shape, (2,))
-
-        for fuel_value in fuel_multi:
-            self.assertGreater(fuel_value, 0.0)
-
-        for volume_value in fuel_volume:
-            self.assertGreater(volume_value, 0.0)
-
-        total_fuel_multi_sum = sum(fuel_multi)
-        self.assertGreater(total_fuel[0], total_fuel_multi_sum)
-
-    @require_pyoptsparse(optimizer='IPOPT')
-    def test_multi_fuel_volume_consistency(self):
-        """Test that fuel volume is consistent with mass and density.
-
-        Verifies that the fuel volume output is correctly computed by
-        dividing the fuel mass by the corresponding fuel density for
-        each unique (csv, density) pair.
-        """
-        om.clear_reports()
-
-        phase_info_modified = deepcopy(phase_info)
-        inputs_modified = deepcopy(lsa2_inputs)
-
-        inputs_modified.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-        engine = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': ('models/engines/turbofan_28k.csv', 6.7),
-                'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-                'descent': ('models/engines/turbofan_22k.csv', 6.4),
-            },
-        )
-        phase_info_modified = engine.configure_phase_info(phase_info_modified)
-
-        prob = AviaryProblem(verbosity=0)
-        prob.load_inputs(inputs_modified, phase_info_modified)
-        prob.load_external_subsystems([engine])
-        prob.check_and_preprocess_inputs()
-        prob.build_model()
-        prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
-        prob.add_design_variables()
-        prob.add_objective()
-        prob.setup()
-        prob.run_aviary_problem(suppress_solver_print=True)
-
-        fuel_mass = prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm')
-        fuel_volume = prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI, units='galUS')
-
-        densities = [6.7, 6.4]
-
-        for i, (mass, volume, density) in enumerate(zip(fuel_mass, fuel_volume, densities)):
-            expected_volume = mass / density
-            assert_near_equal(volume, expected_volume, tolerance=1e-4)
-
-    @require_pyoptsparse(optimizer='IPOPT')
-    def test_multi_fuel_phase_mapping(self):
-        """Test that the phase mapping produces expected output structure.
-
-        Verifies that the phase_engine_map correctly maps to the output
-        array indices, with the same CSV+density pair appearing at
-        different indices if they have different densities.
-        """
-        om.clear_reports()
-
-        phase_info_modified = deepcopy(phase_info)
-        inputs_modified = deepcopy(lsa2_inputs)
-
-        inputs_modified.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-        engine = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': ('models/engines/turbofan_28k.csv', 6.7),
-                'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-                'descent': ('models/engines/turbofan_22k.csv', 6.4),
-            },
-        )
-        phase_info_modified = engine.configure_phase_info(phase_info_modified)
-
-        prob = AviaryProblem(verbosity=0)
-        prob.load_inputs(inputs_modified, phase_info_modified)
-        prob.load_external_subsystems([engine])
-        prob.check_and_preprocess_inputs()
-        prob.build_model()
-        prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
-        prob.add_design_variables()
-        prob.add_objective()
-        prob.setup()
-        prob.run_aviary_problem(suppress_solver_print=True)
-
-        fuel_multi = prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm')
-
-        self.assertEqual(len(fuel_multi), 2)
-
-        climb_fuel = fuel_multi[0]
-        cruise_descent_fuel = fuel_multi[1]
-
-        self.assertGreater(climb_fuel, 0.0)
-        self.assertGreater(cruise_descent_fuel, 0.0)
-
-    @require_pyoptsparse(optimizer='IPOPT')
-    def test_multi_fuel_optimization_reasonable_fuel(self):
-        """Test that total fuel consumption is within a reasonable range.
-
-        For a LSA2 aircraft with the configured engine decks, the total
-        fuel consumption should be within a physically reasonable range
-        for a typical mission profile.
-        """
-        om.clear_reports()
-
-        phase_info_modified = deepcopy(phase_info)
-        inputs_modified = deepcopy(lsa2_inputs)
-
-        inputs_modified.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
-        inputs_modified.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
-        inputs_modified.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
-
-        engine = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': ('models/engines/turbofan_28k.csv', 6.7),
-                'cruise': ('models/engines/turbofan_22k.csv', 6.4),
-                'descent': ('models/engines/turbofan_22k.csv', 6.4),
-            },
-        )
-        phase_info_modified = engine.configure_phase_info(phase_info_modified)
-
-        prob = AviaryProblem(verbosity=0)
-        prob.load_inputs(inputs_modified, phase_info_modified)
-        prob.load_external_subsystems([engine])
-        prob.check_and_preprocess_inputs()
-        prob.build_model()
-        prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
-        prob.add_design_variables()
-        prob.add_objective()
-        prob.setup()
-        prob.run_aviary_problem(suppress_solver_print=True)
+        self.assertTrue(prob.result.success)
 
         total_fuel = prob.get_val(Mission.TOTAL_FUEL, units='lbm')[0]
-
         self.assertGreater(total_fuel, 10000.0)
         self.assertLess(total_fuel, 100000.0)
+
+        fuel_mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
+        fuel_volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+        densities = [d for _, d in _PHASE_ENGINE_MAP.values()]
+        self.assertEqual(fuel_mass.shape, (len(densities),))
+        self.assertEqual(fuel_volume.shape, (len(densities),))
+
+        for mass, volume, density in zip(fuel_mass, fuel_volume, densities):
+            self.assertGreater(mass, 0.0)
+            assert_near_equal(volume, mass / density, tolerance=1e-6)
 
 
 if __name__ == '__main__':
