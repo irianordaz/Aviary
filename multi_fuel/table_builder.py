@@ -67,6 +67,8 @@ import numpy as np
 import openmdao.api as om
 
 from aviary.subsystems.propulsion.engine_deck import EngineDeck
+from aviary.subsystems.propulsion.propulsion_builder import CorePropulsionBuilder
+from aviary.subsystems.propulsion.propulsion_mission import PropulsionMission
 from aviary.subsystems.subsystem_builder import SubsystemBuilder
 from aviary.utils.aviary_values import AviaryValues
 from aviary.utils.functions import get_path
@@ -101,9 +103,11 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
 
         unique_entries = list(dict.fromkeys(phase_engine_map.values()))
         self._unique_entries = unique_entries
-        n = len(unique_entries)
-        self.add_output(TOTAL_FUEL_MULTI, val=0.0, shape=n, units='lbm')
-        self.add_output(TOTAL_FUEL_VOLUME_MULTI, val=0.0, shape=n, units='galUS')
+        num_entries = len(unique_entries)
+        self.add_output(TOTAL_FUEL_MULTI, val=0.0, shape=num_entries, units='lbm')
+        self.add_output(
+            TOTAL_FUEL_VOLUME_MULTI, val=0.0, shape=num_entries, units='galUS'
+        )
 
     def setup_partials(self):
         phase_engine_map = self.options['phase_engine_map']
@@ -145,12 +149,15 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
     def compute(self, inputs, outputs):
         phase_engine_map = self.options['phase_engine_map']
         unique_entries = self._unique_entries
-        n = len(unique_entries)
-        mass_totals = np.zeros(n)
+        num_entries = len(unique_entries)
+        mass_totals = np.zeros(num_entries)
 
         for phase, entry in phase_engine_map.items():
-            fuel = inputs[f'mass_start_{phase}'].flat[0] - inputs[f'mass_end_{phase}'].flat[0]
-            mass_totals[unique_entries.index(entry)] += fuel
+            phase_fuel_mass = (
+                inputs[f'mass_start_{phase}'].flat[0]
+                - inputs[f'mass_end_{phase}'].flat[0]
+            )
+            mass_totals[unique_entries.index(entry)] += phase_fuel_mass
 
         densities = np.array([entry[1] for entry in unique_entries])
         outputs[TOTAL_FUEL_MULTI] = mass_totals
@@ -190,15 +197,75 @@ class EngineTableBuilder(EngineDeck):
         super().__init__(name=name, options=options)
 
 
+class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
+    """Phase-aware drop-in replacement for ``CorePropulsionBuilder``.
+
+    Aviary's ``CorePropulsionBuilder`` always builds its ``PropulsionMission``
+    from a single, fixed list of ``engine_models`` and uses that same engine in
+    every phase. This subclass overrides ``build_mission`` to instead pick the
+    engine model registered for the current phase (via ``phase_engines``) and
+    build a ``PropulsionMission`` around that engine. The phase identity is
+    read from ``subsystem_options['phase_name']`` (populated upstream by
+    ``MultiEngineTableBuilder.configure_phase_info``).
+
+    Falling back to ``default_engine`` for unknown phases keeps callers from
+    accidentally breaking when a phase is not in ``phase_engines`` (e.g., a
+    reserve phase added later).
+
+    Parameters
+    ----------
+    name : str
+        Builder name. Must remain ``'propulsion'`` so it slots into
+        ``AviaryGroup.subsystems[0]`` correctly.
+    phase_engines : dict, optional
+        Mapping ``{phase_name: EngineModel}`` — the engine to use in each
+        phase's ``PropulsionMission``.
+    default_engine : EngineModel
+        Engine used when ``subsystem_options['phase_name']`` is missing or
+        unrecognized; also used by ``build_pre_mission`` (which is called once
+        and is not phase-aware).
+    """
+
+    def __init__(
+        self,
+        name: str = 'propulsion',
+        meta_data=None,
+        phase_engines: dict = None,
+        default_engine=None,
+    ):
+        super().__init__(
+            name=name, meta_data=meta_data, engine_models=[default_engine]
+        )
+        self._phase_engines = phase_engines or {}
+        self._default_engine = default_engine
+
+    def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
+        phase_name = (subsystem_options or {}).get('phase_name')
+        engine = self._phase_engines.get(phase_name, self._default_engine)
+        return PropulsionMission(
+            num_nodes=num_nodes,
+            aviary_options=aviary_inputs,
+            engine_models=[engine],
+            user_options=user_options,
+            engine_options={},
+        )
+
+
 class MultiEngineTableBuilder(SubsystemBuilder):
-    """SubsystemBuilder that adds post-mission multi-fuel burn accounting.
+    """SubsystemBuilder that wires multi-fuel engine decks per mission phase.
 
     Holds a mapping of mission phases to engine deck CSV files and optional
-    per-phase fuel densities. Registered with ``AviaryProblem`` as an external
-    subsystem, it contributes only a post-mission component that aggregates fuel
-    burn per unique (csv, density) pair using the mass timeseries of each phase.
-    A reference engine (see ``get_default_engine``) is exposed for the user to
-    register separately as Aviary's EngineModel for actual propulsion.
+    per-phase fuel densities, and provides three integration hooks:
+
+    - ``configure_phase_info``: tags each phase's ``subsystem_options`` with
+      its ``phase_name`` under the propulsion subsystem's key, so the
+      per-phase engine selector knows which engine to use.
+    - ``install_propulsion``: swaps Aviary's default ``CorePropulsionBuilder``
+      with a ``MultiPhasePropulsionBuilder`` that selects the per-phase engine
+      when each phase's ODE is built.
+    - ``build_post_mission``: contributes a component that aggregates fuel
+      burn (mass and volume) per unique ``(csv, density)`` pair from the
+      phase mass timeseries, after the trajectory has been wired.
 
     Parameters
     ----------
@@ -220,109 +287,108 @@ class MultiEngineTableBuilder(SubsystemBuilder):
     ):
         super().__init__(name=name)
 
-        raw_map = phase_engine_map or {}
+        raw_phase_engine_map = phase_engine_map or {}
         self.phase_engine_map = {}
-        for phase, val in raw_map.items():
-            if isinstance(val, str):
-                self.phase_engine_map[phase] = (val, _DEFAULT_FUEL_DENSITY_LBM_GAL)
+        for phase, phase_entry in raw_phase_engine_map.items():
+            if isinstance(phase_entry, str):
+                csv_path = phase_entry
+                density_lbm_per_gal = _DEFAULT_FUEL_DENSITY_LBM_GAL
             else:
-                csv, density = val
-                self.phase_engine_map[phase] = (csv, density)
+                csv_path, density_lbm_per_gal = phase_entry
+            self.phase_engine_map[phase] = (csv_path, density_lbm_per_gal)
 
         self._phase_engines = {}
-        for phase, (csv, density) in self.phase_engine_map.items():
-            opts = AviaryValues()
-            opts.set_val(Aircraft.Fuel.DENSITY, density, 'lbm/galUS')
+        for phase, (csv_path, density_lbm_per_gal) in self.phase_engine_map.items():
+            engine_options = AviaryValues()
+            engine_options.set_val(
+                Aircraft.Fuel.DENSITY, density_lbm_per_gal, 'lbm/galUS'
+            )
             self._phase_engines[phase] = EngineTableBuilder(
-                name=f'{name}_{phase}', csv_path=csv, options=opts
+                name=f'{name}_{phase}', csv_path=csv_path, options=engine_options
             )
 
     def get_default_engine(self) -> EngineTableBuilder:
         """Return the first configured engine for use as Aviary's EngineModel.
 
-        The returned ``EngineTableBuilder`` should be passed to
-        ``AviaryProblem.load_external_subsystems`` alongside this builder so
-        that Aviary's propulsion subsystem has an engine to build. "First" is
-        defined by insertion order of ``phase_engine_map``.
+        The returned ``EngineTableBuilder`` is passed to
+        ``AviaryProblem.load_external_subsystems`` so that Aviary's
+        ``check_and_preprocess_inputs`` step has an engine to construct the
+        initial ``CorePropulsionBuilder``. After that step,
+        ``install_propulsion`` replaces that builder with a phase-aware one.
+        "First" is defined by insertion order of ``phase_engine_map``.
         """
         if not self._phase_engines:
             raise ValueError(f'{self.name}: phase_engine_map is empty.')
         return next(iter(self._phase_engines.values()))
 
-    def configure_phase_info(self, phase_info: dict) -> dict:
-        """Inject phase name into each phase's ``subsystem_options`` entry.
+    def configure_phase_info(
+        self, phase_info: dict, propulsion_name: str = 'propulsion'
+    ) -> dict:
+        """Tag each phase's subsystem_options with its name under ``propulsion``.
 
-        Modifies ``phase_info`` in place so that when the mission ODE calls
-        ``build_mission`` on this subsystem for a given phase, the
-        ``subsystem_options`` argument contains ``phase_name``. That key is
-        used by ``build_mission`` to dispatch to the correct per-phase engine
-        deck from ``phase_engine_map``.
+        Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']
+        [propulsion_name]`` to the propulsion builder's ``build_mission`` as
+        ``subsystem_options``. ``MultiPhasePropulsionBuilder`` reads
+        ``subsystem_options['phase_name']`` to pick the engine for that phase,
+        so we set that key here.
 
         Parameters
         ----------
         phase_info : dict
             The phase_info dictionary to configure. ``pre_mission`` and
             ``post_mission`` keys are skipped.
+        propulsion_name : str
+            Name of the propulsion subsystem in Aviary (default
+            ``'propulsion'``). Must match the ``name`` of the
+            ``MultiPhasePropulsionBuilder`` installed in
+            ``install_propulsion``.
 
         Returns
         -------
         dict
             The same ``phase_info`` dict, with ``phase_name`` set at
-            ``phase_info[phase]['subsystem_options'][self.name]['phase_name']``.
+            ``phase_info[phase]['subsystem_options'][propulsion_name]['phase_name']``.
         """
         skip = {'pre_mission', 'post_mission'}
         for phase_name, phase_opts in phase_info.items():
             if phase_name in skip:
                 continue
-            phase_opts.setdefault('subsystem_options', {}).setdefault(self.name, {})[
-                'phase_name'
-            ] = phase_name
+            phase_opts.setdefault('subsystem_options', {}).setdefault(
+                propulsion_name, {}
+            )['phase_name'] = phase_name
         return phase_info
 
-    def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
-        """Build the per-phase engine deck's mission component.
+    def install_propulsion(self, aviary_group, propulsion_name: str = 'propulsion'):
+        """Swap Aviary's ``CorePropulsionBuilder`` for a phase-aware one.
 
-        Reads ``phase_name`` from ``subsystem_options`` (set by
-        ``configure_phase_info``) and delegates to the ``EngineTableBuilder``
-        configured for that phase in ``phase_engine_map``. The resulting engine
-        group is added to the phase ODE; its outputs remain at local paths
-        (see ``mission_outputs``) so they do not collide with the main
-        propulsion subsystem that is built from the engine returned by
-        ``get_default_engine``.
+        Must be called after ``check_and_preprocess_inputs()`` (which adds
+        ``CorePropulsionBuilder`` to ``aviary_group.subsystems``) and before
+        ``build_model()`` (which materializes phase ODEs from those
+        subsystems). The swap preserves the existing builder name so that
+        ``configure_phase_info`` continues to address the right
+        ``subsystem_options`` key.
+
+        Parameters
+        ----------
+        aviary_group : AviaryGroup
+            Typically ``prob.model``. Its ``subsystems`` list is mutated in
+            place; the first builder named ``propulsion_name`` is replaced.
+        propulsion_name : str
+            Name of the propulsion subsystem to replace.
         """
-        if not subsystem_options:
-            return None
-        phase_name = subsystem_options.get('phase_name')
-        if phase_name is None:
-            return None
-        engine = self._phase_engines.get(phase_name)
-        if engine is None:
-            return None
-        return engine.build_mission(
-            num_nodes=num_nodes,
-            aviary_inputs=aviary_inputs,
-            user_options=user_options,
-            subsystem_options={},
+        for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
+            if getattr(subsystem, 'name', None) == propulsion_name:
+                aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
+                    name=propulsion_name,
+                    phase_engines=self._phase_engines,
+                    default_engine=self.get_default_engine(),
+                )
+                return
+        raise RuntimeError(
+            f'{self.name}: could not find a subsystem named '
+            f'{propulsion_name!r} to replace; call after '
+            'check_and_preprocess_inputs().'
         )
-
-    def mission_inputs(self, aviary_inputs=None, user_options=None, subsystem_options=None):
-        """Promote all inputs of the per-phase engine group.
-
-        The per-phase engine requires standard dynamic inputs (Mach, altitude,
-        throttle, etc.); promoting with ``['*']`` lets them connect to the
-        same sources used by the main propulsion subsystem.
-        """
-        return ['*']
-
-    def mission_outputs(self, aviary_inputs=None, user_options=None, subsystem_options=None):
-        """Do not promote the per-phase engine's outputs.
-
-        PropulsionMission already promotes the canonical
-        ``Dynamic.Vehicle.Propulsion.*`` outputs. Promoting the per-phase
-        engine's outputs would collide with those, so we keep them local
-        under ``<phase ODE>/<self.name>/`` instead.
-        """
-        return []
 
     def build_post_mission(
         self,

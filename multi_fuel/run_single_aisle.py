@@ -45,8 +45,8 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 engine = MultiEngineTableBuilder(
     phase_engine_map={
         'climb': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
-        'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
-        'descent': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
+        'cruise': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
+        'descent': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
     },
 )
 
@@ -65,6 +65,12 @@ if __name__ == '__main__':
     prob.load_external_subsystems([engine.get_default_engine(), engine])
 
     prob.check_and_preprocess_inputs()
+
+    # check_and_preprocess_inputs() populates prob.model.subsystems with the
+    # default CorePropulsionBuilder; swap it for a phase-aware one so each
+    # phase's ODE builds a PropulsionMission around the engine configured for
+    # that phase. Must happen before build_model() materializes the ODEs.
+    engine.install_propulsion(prob.model)
 
     prob.build_model()
 

@@ -3,7 +3,7 @@
 These tests verify the two core requirements of ``MultiEngineTableBuilder``:
 
 1. Each engine CSV provided in ``phase_engine_map`` is assigned to and used in
-   the requested mission phase (via ``build_mission`` dispatch).
+   the requested mission phase (via ``MultiPhasePropulsionBuilder`` dispatch).
 2. The fuel density provided per phase is used when computing the fuel volume.
 """
 
@@ -14,6 +14,7 @@ from unittest import mock
 import openmdao.api as om
 from openmdao.utils.assert_utils import assert_near_equal
 
+from aviary.subsystems.propulsion.propulsion_builder import CorePropulsionBuilder
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft
 from multi_fuel.table_builder import (
@@ -23,6 +24,7 @@ from multi_fuel.table_builder import (
     EngineTableBuilder,
     MultiEngineFuelBurnComp,
     MultiEngineTableBuilder,
+    MultiPhasePropulsionBuilder,
 )
 
 _CSV_28K = 'multi_fuel/engines/turbofan_28k.csv'
@@ -47,9 +49,9 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
             'cruise': (_CSV_22K, 6.4),
             'descent': (_CSV_24K, 4.2),
         }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.model.add_subsystem('fuel_burn', fuel_burn_comp, promotes=['*'])
         prob.setup()
         _set_phase_masses(
             prob,
@@ -76,9 +78,9 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
             'climb': (_CSV_22K, 6.7),
             'cruise': (_CSV_22K, 6.4),
         }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.model.add_subsystem('fuel_burn', fuel_burn_comp, promotes=['*'])
         prob.setup()
         _set_phase_masses(
             prob,
@@ -98,9 +100,9 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
             'climb': (_CSV_22K, 6.4),
             'cruise': (_CSV_22K, 6.4),
         }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.model.add_subsystem('fuel_burn', fuel_burn_comp, promotes=['*'])
         prob.setup()
         _set_phase_masses(
             prob,
@@ -120,9 +122,9 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
             'climb': (_CSV_28K, 6.7),
             'cruise': (_CSV_22K, 6.4),
         }
-        comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
-        prob.model.add_subsystem('fuel_burn', comp, promotes=['*'])
+        prob.model.add_subsystem('fuel_burn', fuel_burn_comp, promotes=['*'])
         prob.setup()
         _set_phase_masses(
             prob,
@@ -213,9 +215,9 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
 
     def test_per_phase_engine_names_are_distinct(self):
         builder = self._make_builder()
-        names = {e.name for e in builder._phase_engines.values()}
+        engine_names = {engine.name for engine in builder._phase_engines.values()}
         self.assertEqual(
-            names,
+            engine_names,
             {
                 'multi_engine_table_climb',
                 'multi_engine_table_cruise',
@@ -243,9 +245,9 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
 
 
 class TestConfigurePhaseInfo(unittest.TestCase):
-    """Verify ``configure_phase_info`` tags each phase with its name."""
+    """Verify ``configure_phase_info`` tags each phase with its name under propulsion."""
 
-    def test_injects_phase_name_into_subsystem_options(self):
+    def test_injects_phase_name_into_propulsion_subsystem_options(self):
         builder = MultiEngineTableBuilder(
             phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
         )
@@ -258,20 +260,29 @@ class TestConfigurePhaseInfo(unittest.TestCase):
         configured = builder.configure_phase_info(deepcopy(phase_info))
 
         self.assertEqual(
-            configured['climb']['subsystem_options'][builder.name][
-                'phase_name'
-            ],
+            configured['climb']['subsystem_options']['propulsion']['phase_name'],
             'climb',
         )
         self.assertEqual(
-            configured['cruise']['subsystem_options'][builder.name][
-                'phase_name'
-            ],
+            configured['cruise']['subsystem_options']['propulsion']['phase_name'],
             'cruise',
         )
         # Existing subsystem_options entries are preserved.
         self.assertEqual(
             configured['cruise']['subsystem_options']['other'], {'k': 1}
+        )
+
+    def test_custom_propulsion_name(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        phase_info = {'climb': {}}
+        configured = builder.configure_phase_info(
+            deepcopy(phase_info), propulsion_name='custom_prop'
+        )
+        self.assertEqual(
+            configured['climb']['subsystem_options']['custom_prop'][
+                'phase_name'
+            ],
+            'climb',
         )
 
     def test_skips_pre_and_post_mission(self):
@@ -283,66 +294,121 @@ class TestConfigurePhaseInfo(unittest.TestCase):
         self.assertNotIn('subsystem_options', configured['post_mission'])
 
 
-class TestBuildMissionDispatch(unittest.TestCase):
-    """Verify ``build_mission`` routes to the engine configured for that phase."""
+class _StubAviaryGroup:
+    """Minimal stub with a ``subsystems`` list in the shape AviaryGroup provides."""
 
-    def test_dispatches_to_the_phase_engine(self):
-        builder = MultiEngineTableBuilder(
+    def __init__(self, subsystems):
+        self.subsystems = list(subsystems)
+
+
+class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
+    """Verify ``MultiPhasePropulsionBuilder.build_mission`` selects per phase.
+
+    The builder wraps a dict ``{phase_name: engine}``. On each
+    ``build_mission`` call, it should pick the engine whose key matches
+    ``subsystem_options['phase_name']`` and pass *only* that engine to the
+    ``PropulsionMission`` it constructs.
+    """
+
+    def _make_propulsion_builder(self):
+        outer_builder = MultiEngineTableBuilder(
             phase_engine_map={
                 'climb': (_CSV_28K, 6.7),
                 'cruise': (_CSV_22K, 6.4),
                 'descent': (_CSV_24K, 4.2),
             },
         )
+        propulsion_builder = MultiPhasePropulsionBuilder(
+            name='propulsion',
+            phase_engines=outer_builder._phase_engines,
+            default_engine=outer_builder.get_default_engine(),
+        )
+        return propulsion_builder, outer_builder
 
-        # Replace each per-phase engine's build_mission with a distinct sentinel
-        # group. build_mission on the builder should return the sentinel for the
-        # engine registered at the requested phase.
-        sentinels = {}
-        for phase, engine in builder._phase_engines.items():
-            sentinel = om.Group()
-            sentinels[phase] = sentinel
-            engine.build_mission = mock.MagicMock(return_value=sentinel)
+    def test_picks_engine_registered_for_phase(self):
+        propulsion_builder, outer_builder = self._make_propulsion_builder()
+        with mock.patch(
+            'multi_fuel.table_builder.PropulsionMission'
+        ) as mock_propulsion_mission:
+            for phase in ('climb', 'cruise', 'descent'):
+                propulsion_builder.build_mission(
+                    num_nodes=3,
+                    aviary_inputs=None,
+                    user_options={},
+                    subsystem_options={'phase_name': phase},
+                )
+                call_kwargs = mock_propulsion_mission.call_args.kwargs
+                self.assertEqual(
+                    call_kwargs['engine_models'],
+                    [outer_builder._phase_engines[phase]],
+                    f'phase {phase!r} should dispatch to its engine',
+                )
 
-        for phase in ('climb', 'cruise', 'descent'):
-            result = builder.build_mission(
-                num_nodes=3,
-                aviary_inputs=None,
-                user_options={},
-                subsystem_options={'phase_name': phase},
-            )
-            self.assertIs(
-                result,
-                sentinels[phase],
-                f'build_mission for phase {phase!r} should return that phase engine',
-            )
-            builder._phase_engines[phase].build_mission.assert_called_once()
-
-        # And only the phase's engine should have been called (not cross-phase).
-        for phase, engine in builder._phase_engines.items():
-            self.assertEqual(engine.build_mission.call_count, 1)
-
-    def test_returns_none_for_unknown_phase(self):
-        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
-        self.assertIsNone(
-            builder.build_mission(
+    def test_unknown_phase_falls_back_to_default(self):
+        propulsion_builder, outer_builder = self._make_propulsion_builder()
+        with mock.patch(
+            'multi_fuel.table_builder.PropulsionMission'
+        ) as mock_propulsion_mission:
+            propulsion_builder.build_mission(
                 num_nodes=3,
                 aviary_inputs=None,
                 user_options={},
                 subsystem_options={'phase_name': 'not_a_phase'},
             )
-        )
+            self.assertEqual(
+                mock_propulsion_mission.call_args.kwargs['engine_models'],
+                [outer_builder.get_default_engine()],
+            )
 
-    def test_returns_none_with_empty_subsystem_options(self):
-        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
-        self.assertIsNone(
-            builder.build_mission(
+    def test_missing_subsystem_options_falls_back_to_default(self):
+        propulsion_builder, outer_builder = self._make_propulsion_builder()
+        with mock.patch(
+            'multi_fuel.table_builder.PropulsionMission'
+        ) as mock_propulsion_mission:
+            propulsion_builder.build_mission(
                 num_nodes=3,
                 aviary_inputs=None,
                 user_options={},
-                subsystem_options={},
+                subsystem_options=None,
             )
+            self.assertEqual(
+                mock_propulsion_mission.call_args.kwargs['engine_models'],
+                [outer_builder.get_default_engine()],
+            )
+
+
+class TestInstallPropulsion(unittest.TestCase):
+    """Verify ``install_propulsion`` swaps ``CorePropulsionBuilder`` in place."""
+
+    def test_replaces_default_propulsion_builder(self):
+        builder = MultiEngineTableBuilder(
+            phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
         )
+        default_engine = builder.get_default_engine()
+        original_propulsion = CorePropulsionBuilder(
+            'propulsion', engine_models=[default_engine]
+        )
+        aviary_group = _StubAviaryGroup(
+            [original_propulsion, object(), object()]
+        )
+
+        builder.install_propulsion(aviary_group)
+
+        self.assertIsInstance(
+            aviary_group.subsystems[0], MultiPhasePropulsionBuilder
+        )
+        self.assertEqual(aviary_group.subsystems[0].name, 'propulsion')
+        # The replacement carries the same per-phase engine mapping.
+        self.assertEqual(
+            aviary_group.subsystems[0]._phase_engines, builder._phase_engines
+        )
+
+    def test_raises_when_no_propulsion_subsystem(self):
+        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        aviary_group = _StubAviaryGroup([object(), object()])
+
+        with self.assertRaises(RuntimeError):
+            builder.install_propulsion(aviary_group)
 
 
 class TestBuildPostMission(unittest.TestCase):
@@ -353,10 +419,11 @@ class TestBuildPostMission(unittest.TestCase):
         builder = MultiEngineTableBuilder(
             phase_engine_map={'climb': (_CSV_28K, 6.7)},
         )
-        comp = builder.build_post_mission()
-        self.assertIsInstance(comp, MultiEngineFuelBurnComp)
+        fuel_burn_component = builder.build_post_mission()
+        self.assertIsInstance(fuel_burn_component, MultiEngineFuelBurnComp)
         self.assertEqual(
-            comp.options['phase_engine_map'], builder.phase_engine_map
+            fuel_burn_component.options['phase_engine_map'],
+            builder.phase_engine_map,
         )
 
 

@@ -58,6 +58,9 @@ def _build_problem(phase_engine_map):
     prob.load_inputs(inputs, phases)
     prob.load_external_subsystems([engine.get_default_engine(), engine])
     prob.check_and_preprocess_inputs()
+    # Swap the default CorePropulsionBuilder for a phase-aware one so each
+    # phase's ODE is built around that phase's engine.
+    engine.install_propulsion(prob.model)
     prob.build_model()
     engine.wire_trajectory(prob.model)
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
@@ -78,16 +81,23 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
     def test_each_phase_ode_contains_its_engine_subsystem(self):
         """After ``build_model``, each phase's ODE must contain the per-phase engine.
 
-        ``MultiEngineTableBuilder.build_mission`` returns the per-phase engine's
-        mission group, which ``base_ode.add_subsystems`` adds under the builder's
-        name inside the ``external_subsystems`` group. The builder's per-phase
-        engine is identified by the CSV it resolves ``Aircraft.Engine.DATA_FILE``
-        to; we cross-check that each phase's engine has the expected CSV.
+        ``MultiPhasePropulsionBuilder`` (installed via
+        ``engine.install_propulsion``) builds a per-phase ``PropulsionMission``
+        using the engine registered for that phase. The mission group adds each
+        engine as a subgroup under the engine's own name, giving the path
+        ``traj.phases.{phase}.rhs_all.solver_sub.propulsion.{engine_name}``.
+        The builder's per-phase engine is identified by the CSV it resolves
+        ``Aircraft.Engine.DATA_FILE`` to; we cross-check that each phase's
+        engine has the expected CSV.
         """
         prob, engine = _build_problem(_PHASE_ENGINE_MAP)
 
         for phase, (csv, _) in _PHASE_ENGINE_MAP.items():
-            path = f'traj.phases.{phase}.rhs_all.solver_sub.{engine.name}'
+            phase_engine = engine._phase_engines[phase]
+            path = (
+                f'traj.phases.{phase}.rhs_all.solver_sub.propulsion.'
+                f'{phase_engine.name}'
+            )
             subsys = prob.model._get_subsystem(path)
             self.assertIsNotNone(
                 subsys,
@@ -104,7 +114,6 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
 
             # The builder holds the engine that was dispatched for this phase;
             # its DATA_FILE must match the CSV requested in phase_engine_map.
-            phase_engine = engine._phase_engines[phase]
             self.assertEqual(
                 str(phase_engine.get_val(Aircraft.Engine.DATA_FILE)),
                 str(get_path(csv)),
