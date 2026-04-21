@@ -127,14 +127,14 @@ class PropulsionMission(om.Group):
                         num_nodes=nn,
                         aviary_inputs=options,
                         user_options=user_options,
-                        subsystem_options=kwargs,
+                        subsystem_options={},
                     )
                 else:
                     base_comp = engine.build_mission(
                         num_nodes=nn,
                         aviary_inputs=options,
                         user_options=user_options,
-                        subsystem_options=kwargs,
+                        subsystem_options={},
                     )
                     engine_model = om.Group()
 
@@ -142,7 +142,7 @@ class PropulsionMission(om.Group):
                         num_nodes=nn,
                         aviary_inputs=options,
                         user_options=user_options,
-                        subsystem_options=kwargs,
+                        subsystem_options={},
                     )
 
                     input_aliases = [(Dynamic.Vehicle.Propulsion.THROTTLE, 'throttle_max')]
@@ -198,14 +198,14 @@ class PropulsionMission(om.Group):
                     num_nodes=nn,
                     aviary_inputs=options,
                     user_options=user_options,
-                    subsystem_options=kwargs,
+                    subsystem_options={},
                 )
             else:
                 base_comp = engine.build_mission(
                     num_nodes=nn,
                     aviary_inputs=options,
                     user_options=user_options,
-                    subsystem_options=kwargs,
+                    subsystem_options={},
                 )
                 engine_model = om.Group()
 
@@ -213,7 +213,7 @@ class PropulsionMission(om.Group):
                     num_nodes=nn,
                     aviary_inputs=options,
                     user_options=user_options,
-                    subsystem_options=kwargs,
+                    subsystem_options={},
                 )
 
                 input_aliases = [(Dynamic.Vehicle.Propulsion.THROTTLE, 'throttle_max')]

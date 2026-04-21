@@ -1,72 +1,22 @@
 """Optimize fuel burn for a Large Single Aisle 2 aircraft with multi-fuel engine decks.
 
 This script demonstrates a complete Aviary optimization problem for a Large Single
-Aisle 2 (LSA2) aircraft configured to use different engine decks and fuel types
-across different mission phases. The optimization minimizes total fuel consumption
-while satisfying trajectory constraints.
+Aisle 2 (LSA2) aircraft configured to report fuel consumption across multiple
+engine decks / fuel types via a post-mission accounting subsystem built on top of
+``aviary.subsystems.subsystem_builder.SubsystemBuilder``.
 
-The mission profile consists of three phases:
-    climb : Uses turbofan_28k.csv engine deck with Jet-A fuel (6.7 lbm/galUS)
-    cruise : Uses turbofan_22k.csv engine deck with SAF blend fuel (6.4 lbm/galUS)
-    descent : Uses turbofan_22k.csv engine deck with LNG fuel (6.4 lbm/galUS)
-
-The multi-fuel capability is provided by the MultiEngineTableBuilder class in the
-multi_fuel.table_builder module, which manages a mapping of mission phases to
-different engine decks with optional per-phase fuel densities.
+The mission profile consists of three phases (climb, cruise, descent). The multi-
+fuel reporting is provided by ``MultiEngineTableBuilder`` which is registered as
+an external SubsystemBuilder; Aviary's actual propulsion uses the engine
+returned by ``get_default_engine()`` (the first entry in the phase/engine map).
 
 Workflow
 --------
 1. Load LSA2 aircraft inputs and modify engine parameters
-2. Configure multi-engine phase mapping with different fuel types
-3. Build the AviaryProblem with IPOPT optimizer
-4. Run the optimization to minimize fuel burn
+2. Configure the multi-engine phase mapping with optional per-phase fuel densities
+3. Register the default engine and the builder as external subsystems
+4. Build the model, wire trajectory mass timeseries, and run the optimization
 5. Report total and per-engine fuel consumption
-
-Aircraft Configuration
-----------------------
-    Engine Mass : 6293.8 lbm
-    Reference Mass : 6293.8 lbm
-    Reference SLS Thrust : 22200.5 lbf
-    Scaled SLS Thrust : 22200.5 lbf
-    Scale Factor : 1.0
-
-Mission Phases
---------------
-The phase_info is loaded from aviary.models.missions.energy_state_default and
-modified via deepcopy to avoid mutating the original. The default mission includes
-climb, cruise, and descent phases with constraints on altitude, Mach number,
-and range.
-
-Optimization
-------------
-The optimizer is set to IPOPT with a maximum of 50 iterations and using
-coloring for efficient gradient computation. The objective is to minimize
-fuel burn (mission:objectives:fuel).
-
-Expected Output
----------------
-Upon successful completion, the script prints:
-    - Optimization success status (True/False)
-    - Total fuel consumed in lbm
-    - Per-engine fuel breakdown in lbm (by fuel type)
-    - Per-engine fuel breakdown in US gallons (by fuel type)
-
-Examples
---------
-Run the script directly::
-
-    pixi run python multi_fuel/run_single_aisle.py
-
-To modify the optimization parameters, edit the AviaryProblem configuration
-in the ``if __name__ == '__main__'`` block. To add or modify mission phases,
-edit the phase_engine_map and phase_info variables.
-
-See Also
---------
-multi_fuel.table_builder.MultiEngineTableBuilder : Multi-fuel engine builder
-multi_fuel.table_builder.MultiEngineFuelBurnComp : Fuel burn computation
-aviary.models.aircraft.large_single_aisle_2 : LSA2 aircraft model
-aviary.models.missions.energy_state_default : Default mission phase definitions
 """
 
 from copy import deepcopy
@@ -76,8 +26,12 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
     inputs as lsa2_inputs,
 )
 from aviary.models.missions.energy_state_default import phase_info
-from aviary.variable_info.variables import Aircraft
-from multi_fuel.table_builder import MultiEngineTableBuilder
+from aviary.variable_info.variables import Aircraft, Mission
+from multi_fuel.table_builder import (
+    TOTAL_FUEL_MULTI,
+    TOTAL_FUEL_VOLUME_MULTI,
+    MultiEngineTableBuilder,
+)
 
 phase_info = deepcopy(phase_info)
 inputs = deepcopy(lsa2_inputs)
@@ -95,36 +49,25 @@ engine = MultiEngineTableBuilder(
         'descent': ('models/engines/turbofan_22k.csv', 6.4),
     },
 )
-phase_info = engine.configure_phase_info(phase_info)
 
 if __name__ == '__main__':
-    """Execute the Aviary optimization problem for multi-fuel LSA2 aircraft.
-
-    This block constructs and runs a complete AviaryProblem optimization that
-    minimizes fuel burn for a Large Single Aisle 2 aircraft using different
-    engine decks and fuel types across mission phases.
-
-    The optimization workflow:
-        1. Create AviaryProblem instance
-        2. Load aircraft inputs and phase info
-        3. Register multi-fuel engine as external subsystem
-        4. Validate and preprocess inputs
-        5. Build the full aircraft model
-        6. Configure IPOPT optimizer with coloring
-        7. Add design variables and objective
-        8. Setup the problem
-        9. Run the optimization
-        10. Print fuel consumption results
-    """
     prob = AviaryProblem()
 
     prob.load_inputs(inputs, phase_info)
 
-    prob.load_external_subsystems([engine])
+    # Register the default engine (an EngineDeck → EngineModel) for Aviary
+    # propulsion, and the builder itself as an external SubsystemBuilder that
+    # contributes the post-mission fuel accounting component.
+    prob.load_external_subsystems([engine.get_default_engine(), engine])
 
     prob.check_and_preprocess_inputs()
 
     prob.build_model()
+
+    # build_model() adds the post-mission fuel burn component under
+    # post_mission.<engine.name>; connect phase mass timeseries to its inputs
+    # before setup().
+    engine.wire_trajectory(prob.model)
 
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
 
@@ -136,14 +79,12 @@ if __name__ == '__main__':
     prob.run_aviary_problem()
 
     print('\nSuccess:', not prob.result)
-    from aviary.variable_info.variables import Mission
-
     print('Total fuel (lbm):', prob.get_val(Mission.TOTAL_FUEL, units='lbm'))
     print(
         'Per-engine fuel (lbm):',
-        prob.get_val(Mission.TOTAL_FUEL_MULTI, units='lbm'),
+        prob.get_val(TOTAL_FUEL_MULTI, units='lbm'),
     )
     print(
         'Per-engine fuel (galUS):',
-        prob.get_val(Mission.TOTAL_FUEL_VOLUME_MULTI, units='galUS'),
+        prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS'),
     )
