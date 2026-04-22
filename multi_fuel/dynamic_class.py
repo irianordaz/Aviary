@@ -9,7 +9,6 @@ class CaseDispatcher:
     def _attach_method(self, method_name: str, input_dict: dict) -> None:
         def _bound_method(*args, **kwargs):
             print(f'Calling {method_name}: {input_dict}')
-            return
 
         _bound_method.__name__ = method_name
         _bound_method.__qualname__ = f'{type(self).__name__}.{method_name}'
