@@ -292,16 +292,16 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         for phase, phase_entry in raw_phase_engine_map.items():
             if isinstance(phase_entry, str):
                 csv_path = phase_entry
-                density_lbm_per_gal = _DEFAULT_FUEL_DENSITY_LBM_GAL
+                fuel_density = _DEFAULT_FUEL_DENSITY_LBM_GAL
             else:
-                csv_path, density_lbm_per_gal = phase_entry
-            self.phase_engine_map[phase] = (csv_path, density_lbm_per_gal)
+                csv_path, fuel_density = phase_entry
+            self.phase_engine_map[phase] = (csv_path, fuel_density)
 
         self._phase_engines = {}
-        for phase, (csv_path, density_lbm_per_gal) in self.phase_engine_map.items():
+        for phase, (csv_path, fuel_density) in self.phase_engine_map.items():
             engine_options = AviaryValues()
             engine_options.set_val(
-                Aircraft.Fuel.DENSITY, density_lbm_per_gal, 'lbm/galUS'
+                Aircraft.Fuel.DENSITY, fuel_density, 'lbm/galUS'
             )
             self._phase_engines[phase] = EngineTableBuilder(
                 name=f'{name}_{phase}', csv_path=csv_path, options=engine_options

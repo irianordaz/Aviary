@@ -128,7 +128,7 @@ MultiEngineTableBuilder(
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | `str` | Subsystem label. Must be unique among all external subsystems passed to `load_external_subsystems`. |
-| `phase_engine_map` | `dict` | Mapping of phase name → `(csv_path, density_lbm_per_galUS)` tuple, or a plain CSV path string (falls back to Aviary's default fuel density). |
+| `phase_engine_map` | `dict` | Mapping of phase name → `(csv_path, fuel_densityUS)` tuple, or a plain CSV path string (falls back to Aviary's default fuel density). |
 
 Key behaviors:
 
