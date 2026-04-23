@@ -13,8 +13,8 @@ Two pieces make this work:
 
 After the mission runs, per-fuel totals are exposed as module-level variables:
 
-- `multi_fuel.table_builder.TOTAL_FUEL_MULTI` → `'mission:total_fuel_multi'` (mass, lbm)
-- `multi_fuel.table_builder.TOTAL_FUEL_VOLUME_MULTI` → `'mission:total_fuel_volume_multi'` (volume, galUS)
+- `multi_fuel.table_builder.TOTAL_MULTI_FUEL_MASS` → `'mission:total_multi_fuel_mass'` (mass, lbm)
+- `multi_fuel.table_builder.TOTAL_MULTI_FUEL_VOLUME` → `'mission:total_multi_fuel_volume'` (volume, galUS)
 
 Both arrays are indexed by unique `(csv, density)` pair in order of first appearance. The same CSV used with two different densities produces two separate output entries.
 
@@ -25,8 +25,8 @@ from copy import deepcopy
 
 from aviary.core.aviary_problem import AviaryProblem
 from multi_fuel.table_builder import (
-    TOTAL_FUEL_MULTI,
-    TOTAL_FUEL_VOLUME_MULTI,
+    TOTAL_MULTI_FUEL_MASS,
+    TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
 )
 
@@ -65,8 +65,8 @@ prob.add_objective()
 prob.setup()
 prob.run_aviary_problem()
 
-fuel_mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-fuel_volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+fuel_mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+fuel_volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 ```
 
 The required call order is:
@@ -171,13 +171,13 @@ OpenMDAO `ExplicitComponent` that computes per-fuel mass and volume totals from 
 After the mission runs, per-fuel totals are available via the module-level names:
 
 ```python
-from multi_fuel.table_builder import TOTAL_FUEL_MULTI, TOTAL_FUEL_VOLUME_MULTI
+from multi_fuel.table_builder import TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 
-fuel_mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-fuel_volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+fuel_mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+fuel_volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 ```
 
-These resolve to `'mission:total_fuel_multi'` and `'mission:total_fuel_volume_multi'` respectively. They are defined in `multi_fuel/table_builder.py` rather than Aviary's `Mission` namespace so the extension works against an unmodified Aviary install.
+These resolve to `'mission:total_multi_fuel_mass'` and `'mission:total_multi_fuel_volume'` respectively. They are defined in `multi_fuel/table_builder.py` rather than Aviary's `Mission` namespace so the extension works against an unmodified Aviary install.
 
 Both arrays are indexed by unique `(csv, density)` pair in order of first appearance.
 

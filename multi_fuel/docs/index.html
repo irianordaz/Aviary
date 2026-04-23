@@ -337,27 +337,41 @@
                 color: #f9a8d4;
             }
 
+            /* dark theme explicit overrides — beat @media (prefers-color-scheme: light) */
+            [data-theme="dark"] code      { color: #93c5fd; }
+            [data-theme="dark"] .file-name { color: #93c5fd; }
+            [data-theme="dark"] .fn       { color: #60a5fa; }
+            [data-theme="dark"] .num      { color: #f9a8d4; }
+            [data-theme="dark"] .d-phase  { color: #60a5fa; }
+            [data-theme="dark"] .d-engine { color: #86efac; }
+            [data-theme="dark"] .d-out    { color: #f9a8d4; }
+            [data-theme="dark"] .d-sum    { color: #c084fc; }
+
             /* light mode syntax overrides */
-            [data-theme="light"] .kw {
-                color: #7c3aed;
-            }
-            [data-theme="light"] .st {
-                color: #16a34a;
-            }
-            [data-theme="light"] .cm {
-                color: #64748b;
-            }
+            [data-theme="light"] code { color: #1e40af; }
+            [data-theme="light"] .file-name { color: #1e40af; }
+            [data-theme="light"] .kw { color: #7c3aed; }
+            [data-theme="light"] .fn { color: #1d4ed8; }
+            [data-theme="light"] .st { color: #16a34a; }
+            [data-theme="light"] .cm { color: #64748b; }
+            [data-theme="light"] .num { color: #9d174d; }
+            [data-theme="light"] .d-phase  { color: #1d4ed8; }
+            [data-theme="light"] .d-engine { color: #15803d; }
+            [data-theme="light"] .d-out    { color: #9d174d; }
+            [data-theme="light"] .d-sum    { color: #6b21a8; }
 
             @media (prefers-color-scheme: light) {
-                .kw {
-                    color: #7c3aed;
-                }
-                .st {
-                    color: #16a34a;
-                }
-                .cm {
-                    color: #64748b;
-                }
+                code        { color: #1e40af; }
+                .file-name  { color: #1e40af; }
+                .kw         { color: #7c3aed; }
+                .fn         { color: #1d4ed8; }
+                .st         { color: #16a34a; }
+                .cm         { color: #64748b; }
+                .num        { color: #9d174d; }
+                .d-phase    { color: #1d4ed8; }
+                .d-engine   { color: #15803d; }
+                .d-out      { color: #9d174d; }
+                .d-sum      { color: #6b21a8; }
             }
 
             /* ── Tables ─────────────────────────────────────────────── */
@@ -636,12 +650,12 @@
                     </p>
                     <ul>
                         <li>
-                            <code>TOTAL_FUEL_MULTI</code> →
-                            <code>'mission:total_fuel_multi'</code> (mass, lbm)
+                            <code>TOTAL_MULTI_FUEL_MASS</code> →
+                            <code>'mission:total_multi_fuel_mass'</code> (mass, lbm)
                         </li>
                         <li>
-                            <code>TOTAL_FUEL_VOLUME_MULTI</code> →
-                            <code>'mission:total_fuel_volume_multi'</code>
+                            <code>TOTAL_MULTI_FUEL_VOLUME</code> →
+                            <code>'mission:total_multi_fuel_volume'</code>
                             (volume, galUS)
                         </li>
                     </ul>
@@ -682,14 +696,14 @@
                         <span class="d-arrow">──&gt;</span>
                         <span class="d-out">[2]</span><br />
                         <br />
-                        <span class="d-out">TOTAL_FUEL_MULTI</span>
+                        <span class="d-out">TOTAL_MULTI_FUEL_MASS</span>
                         <span class="d-arrow">=</span>
                         <span class="d-sum"
                             >[fuel_28k_JetA, fuel_22k_SAF, fuel_22k_LNG]</span
                         >
                         <span class="cm">(lbm)</span><br />
                         <span class="d-out"
-                            >TOTAL_FUEL_VOLUME_MULTI</span
+                            >TOTAL_MULTI_FUEL_VOLUME</span
                         >
                         <span class="d-arrow">=</span>
                         <span class="d-sum"
@@ -707,8 +721,8 @@
 
 <span class="kw">from</span> aviary.core.aviary_problem <span class="kw">import</span> AviaryProblem
 <span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> (
-    TOTAL_FUEL_MULTI,
-    TOTAL_FUEL_VOLUME_MULTI,
+    TOTAL_MULTI_FUEL_MASS,
+    TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
 )
 
@@ -746,8 +760,8 @@ prob.<span class="fn">add_objective</span>()
 prob.<span class="fn">setup</span>()
 prob.<span class="fn">run_aviary_problem</span>()
 
-fuel_mass = prob.<span class="fn">get_val</span>(TOTAL_FUEL_MULTI, units=<span class="st">'lbm'</span>)
-fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_FUEL_VOLUME_MULTI, units=<span class="st">'galUS'</span>)</code></pre>
+fuel_mass = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_MASS, units=<span class="st">'lbm'</span>)
+fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, units=<span class="st">'galUS'</span>)</code></pre>
                 </section>
 
                 <!-- Call Order -->
@@ -1037,14 +1051,14 @@ engine = <span class="fn">EngineTableBuilder</span>(
                         <code>multi_fuel.table_builder</code>:
                     </p>
                     <div class="code-label">python</div>
-                    <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> TOTAL_FUEL_MULTI, TOTAL_FUEL_VOLUME_MULTI
+                    <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 
-fuel_mass = prob.<span class="fn">get_val</span>(TOTAL_FUEL_MULTI,        units=<span class="st">'lbm'</span>)
-fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_FUEL_VOLUME_MULTI, units=<span class="st">'galUS'</span>)</code></pre>
+fuel_mass = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_MASS,        units=<span class="st">'lbm'</span>)
+fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, units=<span class="st">'galUS'</span>)</code></pre>
                     <p>
                         These resolve to
-                        <code>'mission:total_fuel_multi'</code> and
-                        <code>'mission:total_fuel_volume_multi'</code>
+                        <code>'mission:total_multi_fuel_mass'</code> and
+                        <code>'mission:total_multi_fuel_volume'</code>
                         respectively. Both arrays are indexed by unique
                         <code>(csv, density)</code> pair in order of first
                         appearance. Fuel mass for each phase is the change in
@@ -1129,8 +1143,8 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_FUEL_VOLUME_MULTI, unit
                     </ul>
                     <div class="callout info">
                         Output variable names
-                        (<code>TOTAL_FUEL_MULTI</code>,
-                        <code>TOTAL_FUEL_VOLUME_MULTI</code>) are declared in
+                        (<code>TOTAL_MULTI_FUEL_MASS</code>,
+                        <code>TOTAL_MULTI_FUEL_VOLUME</code>) are declared in
                         <code>multi_fuel/table_builder.py</code> rather than
                         Aviary's <code>Mission</code> namespace so this
                         extension works against an unmodified Aviary install.
