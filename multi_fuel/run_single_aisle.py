@@ -60,6 +60,8 @@ if __name__ == '__main__':
     # Tag each phase so MultiEngineTableBuilder.build_mission can dispatch to
     # the CSV/density configured for that phase in phase_engine_map.
     phase_info = engine.configure_phase_info(phase_info)
+    # TODO: This is just a phase_info reconfiguration that can be done in
+    # # AIMEE inputs
 
     prob.load_inputs(inputs, phase_info)
 
@@ -75,13 +77,16 @@ if __name__ == '__main__':
     # phase's ODE builds a PropulsionMission around the engine configured for
     # that phase. Must happen before build_model() materializes the ODEs.
     engine.install_propulsion(prob.model)
+    # TODO: Can this be added as a hook in AIMEE?
 
     prob.build_model()
 
     # build_model() adds the post-mission fuel burn component under
     # post_mission.<engine.name>; connect phase mass timeseries to its inputs
     # before setup().
-    engine.wire_trajectory(prob.model)
+    engine.wire_trajectory(
+        prob.model
+    )  # TODO: these are just connections that can be applied to AIMEE inputs
 
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
 

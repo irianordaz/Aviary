@@ -294,6 +294,11 @@ class MultiEngineTableBuilder(SubsystemBuilder):
                 if isinstance(engine_info, str)
                 else engine_info
             )
+            resolved = get_path(engine_csv)
+            if not resolved.is_file():
+                raise FileNotFoundError(
+                    f"Engine CSV for phase '{phase}' not found: {resolved}"
+                )
             self.phase_engine_map[phase] = (engine_csv, fuel_density)
 
             engine_options = AviaryValues()
