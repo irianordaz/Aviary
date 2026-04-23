@@ -113,9 +113,9 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         phase_engine_map = self.options['phase_engine_map']
         unique_entries = self._unique_entries
 
-        for phase, entry in phase_engine_map.items():
-            idx = unique_entries.index(entry)
-            density = entry[1]
+        for phase, engine_info in phase_engine_map.items():
+            idx = unique_entries.index(engine_info)
+            _engine_csv, fuel_density = engine_info
 
             self.declare_partials(
                 TOTAL_MULTI_FUEL_MASS,
@@ -136,14 +136,14 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
                 f'mass_start_{phase}',
                 rows=[idx],
                 cols=[0],
-                val=1.0 / density,
+                val=1.0 / fuel_density,
             )
             self.declare_partials(
                 TOTAL_MULTI_FUEL_VOLUME,
                 f'mass_end_{phase}',
                 rows=[idx],
                 cols=[0],
-                val=-1.0 / density,
+                val=-1.0 / fuel_density,
             )
 
     def compute(self, inputs, outputs):
@@ -152,14 +152,12 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         num_entries = len(unique_entries)
         mass_totals = np.zeros(num_entries)
 
-        for phase, entry in phase_engine_map.items():
-            phase_fuel_mass = (
-                inputs[f'mass_start_{phase}'].flat[0]
-                - inputs[f'mass_end_{phase}'].flat[0]
-            )
-            mass_totals[unique_entries.index(entry)] += phase_fuel_mass
+        for phase, engine_info in phase_engine_map.items():
+            mass_start = inputs[f'mass_start_{phase}'].flat[0]
+            mass_end = inputs[f'mass_end_{phase}'].flat[0]
+            mass_totals[unique_entries.index(engine_info)] += mass_start - mass_end
 
-        densities = np.array([entry[1] for entry in unique_entries])
+        densities = np.array([engine_info[1] for engine_info in unique_entries])
         outputs[TOTAL_MULTI_FUEL_MASS] = mass_totals
         outputs[TOTAL_MULTI_FUEL_VOLUME] = mass_totals / densities
 
@@ -176,7 +174,7 @@ class EngineTableBuilder(EngineDeck):
     ----------
     name : str
         Label for this engine model. Default ``'engine_table'``.
-    csv_path : str
+    engine_csv : str
         Path to the engine performance CSV data file, either relative to the
         Aviary models directory or absolute. Default
         ``'models/engines/turbofan_22k.csv'``.
@@ -188,12 +186,12 @@ class EngineTableBuilder(EngineDeck):
     def __init__(
         self,
         name: str = 'engine_table',
-        csv_path: str = 'models/engines/turbofan_22k.csv',
+        engine_csv: str = 'models/engines/turbofan_22k.csv',
         options: AviaryValues = None,
     ):
         if options is None:
             options = AviaryValues()
-        options.set_val(Aircraft.Engine.DATA_FILE, get_path(csv_path))
+        options.set_val(Aircraft.Engine.DATA_FILE, get_path(engine_csv))
         super().__init__(name=name, options=options)
 
 
@@ -241,11 +239,11 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
 
     def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
         phase_name = (subsystem_options or {}).get('phase_name')
-        engine = self._phase_engines.get(phase_name, self._default_engine)
+        phase_engine = self._phase_engines.get(phase_name, self._default_engine)
         return PropulsionMission(
             num_nodes=num_nodes,
             aviary_options=aviary_inputs,
-            engine_models=[engine],
+            engine_models=[phase_engine],
             user_options=user_options,
             engine_options={},
         )
@@ -275,8 +273,8 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         ``'multi_engine_table'``.
     phase_engine_map : dict, optional
         Mapping of phase name to engine configuration. Each value can be either
-        a string CSV path (uses default fuel density) or a ``(csv_path,
-        density)`` tuple. Paths may be Aviary-relative or absolute. Default
+        a string CSV path (uses default fuel density) or a ``(engine_csv,
+        fuel_density)`` tuple. Paths may be Aviary-relative or absolute. Default
         None (empty mapping).
     """
 
@@ -287,24 +285,21 @@ class MultiEngineTableBuilder(SubsystemBuilder):
     ):
         super().__init__(name=name)
 
-        raw_phase_engine_map = phase_engine_map or {}
         self.phase_engine_map = {}
-        for phase, phase_entry in raw_phase_engine_map.items():
-            if isinstance(phase_entry, str):
-                csv_path = phase_entry
-                fuel_density = _DEFAULT_FUEL_DENSITY_LBM_GAL
-            else:
-                csv_path, fuel_density = phase_entry
-            self.phase_engine_map[phase] = (csv_path, fuel_density)
-
         self._phase_engines = {}
-        for phase, (csv_path, fuel_density) in self.phase_engine_map.items():
-            engine_options = AviaryValues()
-            engine_options.set_val(
-                Aircraft.Fuel.DENSITY, fuel_density, 'lbm/galUS'
+
+        for phase, engine_info in (phase_engine_map or {}).items():
+            engine_csv, fuel_density = (
+                (engine_info, _DEFAULT_FUEL_DENSITY_LBM_GAL)
+                if isinstance(engine_info, str)
+                else engine_info
             )
+            self.phase_engine_map[phase] = (engine_csv, fuel_density)
+
+            engine_options = AviaryValues()
+            engine_options.set_val(Aircraft.Fuel.DENSITY, fuel_density, 'lbm/galUS')
             self._phase_engines[phase] = EngineTableBuilder(
-                name=f'{name}_{phase}', csv_path=csv_path, options=engine_options
+                name=f'{name}_{phase}', engine_csv=engine_csv, options=engine_options
             )
 
     def configure_phase_info(
@@ -339,9 +334,9 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         for phase_name, phase_opts in phase_info.items():
             if phase_name in skip:
                 continue
-            phase_opts.setdefault('subsystem_options', {}).setdefault(
-                propulsion_name, {}
-            )['phase_name'] = phase_name
+            subsystem_options = phase_opts.setdefault('subsystem_options', {})
+            propulsion_options = subsystem_options.setdefault(propulsion_name, {})
+            propulsion_options['phase_name'] = phase_name
         return phase_info
 
     def install_propulsion(self, aviary_group, propulsion_name: str = 'propulsion'):

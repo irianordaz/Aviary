@@ -155,7 +155,7 @@ class TestEngineTableBuilder(unittest.TestCase):
         self.assertEqual(EngineTableBuilder(name='x').name, 'x')
 
     def test_data_file_option_set_from_csv_path(self):
-        builder = EngineTableBuilder(csv_path=_CSV_28K)
+        builder = EngineTableBuilder(engine_csv=_CSV_28K)
         self.assertEqual(
             str(builder.get_val(Aircraft.Engine.DATA_FILE)),
             str(get_path(_CSV_28K)),
@@ -194,13 +194,13 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
         """Each per-phase engine must carry the requested Aircraft.Fuel.DENSITY."""
         builder = self._make_builder()
         expected = {'climb': 6.7, 'cruise': 6.4, 'descent': 4.2}
-        for phase, density in expected.items():
+        for phase, fuel_density in expected.items():
             engine = builder._phase_engines[phase]
             self.assertAlmostEqual(
                 engine.get_val(Aircraft.Fuel.DENSITY, units='lbm/galUS'),
-                density,
+                fuel_density,
                 places=9,
-                msg=f'phase {phase!r} should have density {density}',
+                msg=f'phase {phase!r} should have fuel_density {fuel_density}',
             )
 
     def test_string_value_applies_default_density(self):

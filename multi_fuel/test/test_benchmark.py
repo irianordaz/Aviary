@@ -147,9 +147,9 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
         self.assertEqual(fuel_mass.shape, (len(densities),))
         self.assertEqual(fuel_volume.shape, (len(densities),))
 
-        for mass, volume, density in zip(fuel_mass, fuel_volume, densities):
+        for mass, volume, fuel_density in zip(fuel_mass, fuel_volume, densities):
             self.assertGreater(mass, 0.0)
-            assert_near_equal(volume, mass / density, tolerance=1e-6)
+            assert_near_equal(volume, mass / fuel_density, tolerance=1e-6)
 
 
 if __name__ == '__main__':
