@@ -9,12 +9,12 @@ Aviary's stock propulsion builder (`CorePropulsionBuilder`) always uses a single
 Two pieces make this work:
 
 1. **`MultiPhasePropulsionBuilder`** — a subclass of `CorePropulsionBuilder` whose `build_mission` reads `subsystem_options['phase_name']` and builds a `PropulsionMission` around that phase's engine.
-2. **`MultiEngineTableBuilder`** — a `SubsystemBuilder` that holds the `{phase: (csv, density)}` map, exposes helpers for installing the propulsion swap and wiring the post-mission fuel accounting component, and contributes a component that aggregates fuel burn per unique `(csv, density)` pair.
+2. **`PhasedEngineTableBuilder`** — a `SubsystemBuilder` that holds the `{phase: (csv, density)}` map, exposes helpers for installing the propulsion swap and wiring the post-mission fuel accounting component, and contributes a component that aggregates fuel burn per unique `(csv, density)` pair.
 
 After the mission runs, per-fuel totals are exposed as module-level variables:
 
-- `multi_fuel.table_builder.TOTAL_MULTI_FUEL_MASS` → `'mission:total_multi_fuel_mass'` (mass, lbm)
-- `multi_fuel.table_builder.TOTAL_MULTI_FUEL_VOLUME` → `'mission:total_multi_fuel_volume'` (volume, galUS)
+- `multi_fuel.phased_engine_builder.TOTAL_MULTI_FUEL_MASS` → `'mission:total_multi_fuel_mass'` (mass, lbm)
+- `multi_fuel.phased_engine_builder.TOTAL_MULTI_FUEL_VOLUME` → `'mission:total_multi_fuel_volume'` (volume, galUS)
 
 Both arrays are indexed by unique `(csv, density)` pair in order of first appearance. The same CSV used with two different densities produces two separate output entries.
 
@@ -24,16 +24,16 @@ Both arrays are indexed by unique `(csv, density)` pair in order of first appear
 from copy import deepcopy
 
 from aviary.core.aviary_problem import AviaryProblem
-from multi_fuel.table_builder import (
+from multi_fuel.phased_engine_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
-    MultiEngineTableBuilder,
+    PhasedEngineTableBuilder,
 )
 
-engine = MultiEngineTableBuilder(
+engine = PhasedEngineTableBuilder(
     phase_engine_map={
-        'climb':   ('multi_fuel/engines/turbofan_28k.csv', 6.7),  # Jet-A
-        'cruise':  ('multi_fuel/engines/turbofan_22k.csv', 6.4),  # SAF blend
+        'climb': ('multi_fuel/engines/turbofan_28k.csv', 6.7),  # Jet-A
+        'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4),  # SAF blend
         'descent': ('multi_fuel/engines/turbofan_22k.csv', 3.5),  # LNG
     },
 )
@@ -52,7 +52,7 @@ prob.check_and_preprocess_inputs()
 
 # Swap Aviary's CorePropulsionBuilder for a phase-aware one so each phase's
 # ODE is built around *that* phase's engine (and its fuel-flow drives mass).
-engine.install_propulsion(prob.model)
+engine.swap_propulsion_builder(prob.model)
 
 prob.build_model()
 
@@ -73,7 +73,7 @@ The required call order is:
 
 ```
 configure_phase_info → load_inputs → load_external_subsystems
-  → check_and_preprocess_inputs → install_propulsion
+  → check_and_preprocess_inputs → swap_propulsion_builder
   → build_model → wire_trajectory → setup → run_aviary_problem
 ```
 
@@ -81,7 +81,7 @@ configure_phase_info → load_inputs → load_external_subsystems
 
 | File | Description |
 |------|-------------|
-| `table_builder.py` | Core implementation: `MultiEngineFuelBurnComp`, `EngineTableBuilder`, `MultiPhasePropulsionBuilder`, `MultiEngineTableBuilder` |
+| `phased_engine_builder.py` | Core implementation: `MultiEngineFuelBurnComp`, `EngineTableBuilder`, `MultiPhasePropulsionBuilder`, `PhasedEngineTableBuilder` |
 | `run_single_aisle.py` | Complete example: LSA-2 aircraft with multi-fuel engine decks across climb/cruise/descent |
 | `test/test_table_builder.py` | Unit tests for the per-phase engine assignment, density handling, propulsion dispatch, and post-mission accounting |
 | `test/test_benchmark.py` | End-to-end integration test: builds the full `AviaryProblem` and verifies each phase's ODE contains its assigned engine |
@@ -94,7 +94,7 @@ configure_phase_info → load_inputs → load_external_subsystems
 Thin wrapper around Aviary's `EngineDeck` that accepts a CSV path and an optional `AviaryValues` options container at construction time.
 
 ```python
-from multi_fuel.table_builder import EngineTableBuilder
+from multi_fuel.phased_engine_builder import EngineTableBuilder
 
 engine = EngineTableBuilder(
     name='my_engine',
@@ -110,16 +110,16 @@ Phase-aware subclass of `aviary.subsystems.propulsion.propulsion_builder.CorePro
 
 When the phase name is missing or not in `phase_engines`, it falls back to `default_engine` — this keeps a later-added reserve phase from breaking the run.
 
-You will not normally instantiate this class directly. `MultiEngineTableBuilder.install_propulsion` swaps it into `AviaryGroup.subsystems` in place of the default `CorePropulsionBuilder`.
+You will not normally instantiate this class directly. `PhasedEngineTableBuilder.swap_propulsion_builder` swaps it into `AviaryGroup.subsystems` in place of the default `CorePropulsionBuilder`.
 
-### `MultiEngineTableBuilder`
+### `PhasedEngineTableBuilder`
 
 Primary entry point. Holds the per-phase engine map and coordinates the three integration points with Aviary:
 
 #### Constructor
 
 ```python
-MultiEngineTableBuilder(
+PhasedEngineTableBuilder(
     name: str = 'multi_engine_table',
     phase_engine_map: dict = None,
 )
@@ -146,7 +146,7 @@ Injects the phase name into each flight phase's `subsystem_options` under the pr
 
 Returns the first configured `EngineTableBuilder`. Pass it to `load_external_subsystems` so Aviary has an engine to attach during `check_and_preprocess_inputs`; it's also used as the fallback engine in `MultiPhasePropulsionBuilder`.
 
-#### `install_propulsion(aviary_group, propulsion_name='propulsion')`
+#### `swap_propulsion_builder(aviary_group, propulsion_name='propulsion')`
 
 Walks `aviary_group.subsystems` and replaces the first builder named `propulsion_name` with a `MultiPhasePropulsionBuilder` that carries this builder's per-phase engine mapping.
 
@@ -164,20 +164,20 @@ Connects each regular phase's `traj.{phase}.timeseries.mass` (first and last nod
 
 ### `MultiEngineFuelBurnComp`
 
-OpenMDAO `ExplicitComponent` that computes per-fuel mass and volume totals from phase start/end mass inputs. Sums `mass_start - mass_end` across all phases that share the same `(csv, density)` pair, then divides mass by density to produce volume. Defined internally; instantiated by `MultiEngineTableBuilder.build_post_mission`.
+OpenMDAO `ExplicitComponent` that computes per-fuel mass and volume totals from phase start/end mass inputs. Sums `mass_start - mass_end` across all phases that share the same `(csv, density)` pair, then divides mass by density to produce volume. Defined internally; instantiated by `PhasedEngineTableBuilder.build_post_mission`.
 
 ## Output Variables
 
 After the mission runs, per-fuel totals are available via the module-level names:
 
 ```python
-from multi_fuel.table_builder import TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
+from multi_fuel.phased_engine_builder import TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 
 fuel_mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
 fuel_volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 ```
 
-These resolve to `'mission:total_multi_fuel_mass'` and `'mission:total_multi_fuel_volume'` respectively. They are defined in `multi_fuel/table_builder.py` rather than Aviary's `Mission` namespace so the extension works against an unmodified Aviary install.
+These resolve to `'mission:total_multi_fuel_mass'` and `'mission:total_multi_fuel_volume'` respectively. They are defined in `multi_fuel/phased_engine_builder.py` rather than Aviary's `Mission` namespace so the extension works against an unmodified Aviary install.
 
 Both arrays are indexed by unique `(csv, density)` pair in order of first appearance.
 
@@ -200,7 +200,7 @@ Both arrays are indexed by unique `(csv, density)` pair in order of first appear
 
 **No files under `aviary/` are modified.** The extension composes Aviary's public API:
 
-- `SubsystemBuilder` (base class for `MultiEngineTableBuilder`)
+- `SubsystemBuilder` (base class for `PhasedEngineTableBuilder`)
 - `CorePropulsionBuilder` and `PropulsionMission` (`MultiPhasePropulsionBuilder` subclasses / composes them)
 - `EngineDeck` (base class for `EngineTableBuilder`)
 - `AviaryProblem.load_external_subsystems`, `check_and_preprocess_inputs`, `build_model`
@@ -243,7 +243,7 @@ Use `multi_fuel` when you need to:
 ## See Also
 
 - [Aviary Documentation](https://openmdao.org/aviary)
-- `multi_fuel/table_builder.py` — Source with detailed docstrings
+- `multi_fuel/phased_engine_builder.py` — Source with detailed docstrings
 - `multi_fuel/docs/index.html` — HTML documentation with syntax-highlighted examples
 - `aviary/subsystems/propulsion/propulsion_builder.py` — Base `CorePropulsionBuilder`
 - `aviary/subsystems/propulsion/engine_deck.py` — Base `EngineDeck`

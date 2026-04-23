@@ -561,7 +561,7 @@
                     </li>
                     <li>
                         <a href="#multi-engine-table-builder"
-                            >MultiEngineTableBuilder</a
+                            >PhasedEngineTableBuilder</a
                         >
                     </li>
                     <li><a href="#constructor" class="sub">Constructor</a></li>
@@ -572,7 +572,7 @@
                     </li>
                     <li>
                         <a href="#install-propulsion" class="sub"
-                            >install_propulsion</a
+                            >swap_propulsion_builder</a
                         >
                     </li>
                     <li>
@@ -635,7 +635,7 @@
                             phase's engine.
                         </li>
                         <li>
-                            <code>MultiEngineTableBuilder</code> — a
+                            <code>PhasedEngineTableBuilder</code> — a
                             <code>SubsystemBuilder</code> that holds the
                             <code>{phase: (csv, density)}</code> map and exposes
                             helpers for installing the propulsion swap, wiring
@@ -720,13 +720,13 @@
                     <pre><code><span class="kw">from</span> copy <span class="kw">import</span> deepcopy
 
 <span class="kw">from</span> aviary.core.aviary_problem <span class="kw">import</span> AviaryProblem
-<span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> (
+<span class="kw">from</span> multi_fuel.phased_engine_builder <span class="kw">import</span> (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
-    MultiEngineTableBuilder,
+    PhasedEngineTableBuilder,
 )
 
-engine = <span class="fn">MultiEngineTableBuilder</span>(
+engine = <span class="fn">PhasedEngineTableBuilder</span>(
     phase_engine_map={
         <span class="st">'climb'</span>:   (<span class="st">'multi_fuel/engines/turbofan_28k.csv'</span>, <span class="num">6.7</span>),  <span class="cm"># Jet-A</span>
         <span class="st">'cruise'</span>:  (<span class="st">'multi_fuel/engines/turbofan_22k.csv'</span>, <span class="num">6.4</span>),  <span class="cm"># SAF blend</span>
@@ -747,7 +747,7 @@ prob.<span class="fn">load_external_subsystems</span>([engine.<span class="fn">g
 prob.<span class="fn">check_and_preprocess_inputs</span>()
 
 <span class="cm"># Swap the default CorePropulsionBuilder for a phase-aware one.</span>
-engine.<span class="fn">install_propulsion</span>(prob.model)
+engine.<span class="fn">swap_propulsion_builder</span>(prob.model)
 
 prob.<span class="fn">build_model</span>()
 
@@ -771,7 +771,7 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                         Each step has a precondition on the previous step:
                         <code>configure_phase_info</code> must tag phases before
                         Aviary materializes the ODE;
-                        <code>install_propulsion</code> must run after
+                        <code>swap_propulsion_builder</code> must run after
                         <code>check_and_preprocess_inputs</code> populates
                         <code>prob.model.subsystems</code> and before
                         <code>build_model</code> consumes them;
@@ -794,8 +794,8 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                         <span class="fn">check_and_preprocess_inputs</span><br />
                         <span class="fn">check_and_preprocess_inputs</span>
                         <span class="d-arrow">→</span>
-                        <span class="d-phase">install_propulsion</span><br />
-                        <span class="d-phase">install_propulsion</span>
+                        <span class="d-phase">swap_propulsion_builder</span><br />
+                        <span class="d-phase">swap_propulsion_builder</span>
                         <span class="d-arrow">→</span>
                         <span class="fn">build_model</span><br />
                         <span class="fn">build_model</span>
@@ -814,13 +814,13 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                     <h2>File Structure</h2>
                     <ul class="file-list">
                         <li>
-                            <span class="file-name">table_builder.py</span>
+                            <span class="file-name">phased_engine_builder.py</span>
                             <span class="file-desc">
                                 Core implementation:
                                 <code>MultiEngineFuelBurnComp</code>,
                                 <code>EngineTableBuilder</code>,
                                 <code>MultiPhasePropulsionBuilder</code>,
-                                <code>MultiEngineTableBuilder</code>
+                                <code>PhasedEngineTableBuilder</code>
                             </span>
                         </li>
                         <li>
@@ -865,10 +865,10 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                         <code>AviaryValues</code> options container at
                         construction time. Used on its own or as the per-phase
                         engine stored inside
-                        <code>MultiEngineTableBuilder</code>.
+                        <code>PhasedEngineTableBuilder</code>.
                     </p>
                     <div class="code-label">python</div>
-                    <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> EngineTableBuilder
+                    <pre><code><span class="kw">from</span> multi_fuel.phased_engine_builder <span class="kw">import</span> EngineTableBuilder
 
 engine = <span class="fn">EngineTableBuilder</span>(
     name=<span class="st">'my_engine'</span>,
@@ -906,16 +906,16 @@ engine = <span class="fn">EngineTableBuilder</span>(
                     </p>
                     <div class="callout note">
                         <strong>You don't normally instantiate this directly.</strong>
-                        <code>MultiEngineTableBuilder.install_propulsion</code>
+                        <code>PhasedEngineTableBuilder.swap_propulsion_builder</code>
                         swaps it into <code>AviaryGroup.subsystems</code> in
                         place of the default
                         <code>CorePropulsionBuilder</code>.
                     </div>
                 </section>
 
-                <!-- MultiEngineTableBuilder -->
+                <!-- PhasedEngineTableBuilder -->
                 <section id="multi-engine-table-builder">
-                    <h2>MultiEngineTableBuilder</h2>
+                    <h2>PhasedEngineTableBuilder</h2>
                     <p>
                         Primary entry point. Holds the
                         <code>{phase: (csv, density)}</code> map and
@@ -927,7 +927,7 @@ engine = <span class="fn">EngineTableBuilder</span>(
 
                     <h3 id="constructor">Constructor</h3>
                     <div class="code-label">signature</div>
-                    <pre><code><span class="fn">MultiEngineTableBuilder</span>(
+                    <pre><code><span class="fn">PhasedEngineTableBuilder</span>(
     name: <span class="fn">str</span> = <span class="st">'multi_engine_table'</span>,
     phase_engine_map: <span class="fn">dict</span> = <span class="kw">None</span>,
 )</code></pre>
@@ -1005,7 +1005,7 @@ engine = <span class="fn">EngineTableBuilder</span>(
                         <code>MultiPhasePropulsionBuilder</code>.
                     </p>
 
-                    <h3 id="install-propulsion">install_propulsion(aviary_group, propulsion_name='propulsion')</h3>
+                    <h3 id="install-propulsion">swap_propulsion_builder(aviary_group, propulsion_name='propulsion')</h3>
                     <p>
                         Walks <code>aviary_group.subsystems</code> and replaces
                         the first builder named <code>propulsion_name</code>
@@ -1048,10 +1048,10 @@ engine = <span class="fn">EngineTableBuilder</span>(
                     <p>
                         After the mission runs, per-fuel totals are available
                         via the module-level names exported from
-                        <code>multi_fuel.table_builder</code>:
+                        <code>multi_fuel.phased_engine_builder</code>:
                     </p>
                     <div class="code-label">python</div>
-                    <pre><code><span class="kw">from</span> multi_fuel.table_builder <span class="kw">import</span> TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
+                    <pre><code><span class="kw">from</span> multi_fuel.phased_engine_builder <span class="kw">import</span> TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 
 fuel_mass = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_MASS,        units=<span class="st">'lbm'</span>)
 fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, units=<span class="st">'galUS'</span>)</code></pre>
@@ -1118,7 +1118,7 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                     <ul>
                         <li>
                             <code>SubsystemBuilder</code> — base class for
-                            <code>MultiEngineTableBuilder</code>
+                            <code>PhasedEngineTableBuilder</code>
                         </li>
                         <li>
                             <code>CorePropulsionBuilder</code> +
@@ -1145,7 +1145,7 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                         Output variable names
                         (<code>TOTAL_MULTI_FUEL_MASS</code>,
                         <code>TOTAL_MULTI_FUEL_VOLUME</code>) are declared in
-                        <code>multi_fuel/table_builder.py</code> rather than
+                        <code>multi_fuel/phased_engine_builder.py</code> rather than
                         Aviary's <code>Mission</code> namespace so this
                         extension works against an unmodified Aviary install.
                     </div>
@@ -1266,7 +1266,7 @@ fuel_volume = prob.<span class="fn">get_val</span>(TOTAL_MULTI_FUEL_VOLUME, unit
                             >
                         </li>
                         <li>
-                            <code>multi_fuel/table_builder.py</code> — Source
+                            <code>multi_fuel/phased_engine_builder.py</code> — Source
                             with detailed docstrings
                         </li>
                         <li>

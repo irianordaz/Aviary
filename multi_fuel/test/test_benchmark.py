@@ -27,7 +27,7 @@ from aviary.variable_info.variables import Aircraft, Mission
 from multi_fuel.phased_engine_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
-    MultiEngineTableBuilder,
+    PhasedEngineTableBuilder,
 )
 
 _PHASE_ENGINE_MAP = {
@@ -55,7 +55,7 @@ def _build_problem(phase_engine_map):
     _set_engine_inputs(inputs, phase_engine_map)
     phases = deepcopy(phase_info)
 
-    engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
+    engine = PhasedEngineTableBuilder(phase_engine_map=phase_engine_map)
     phases = engine.configure_phase_info(phases)
 
     prob = AviaryProblem(verbosity=0)
@@ -64,7 +64,7 @@ def _build_problem(phase_engine_map):
     prob.check_and_preprocess_inputs()
     # Swap the default CorePropulsionBuilder for a phase-aware one so each
     # phase's ODE is built around that phase's engine.
-    engine.install_propulsion(prob.model)
+    engine.swap_propulsion_builder(prob.model)
     prob.build_model()
     engine.wire_trajectory(prob.model)
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
@@ -86,7 +86,7 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
         """After ``build_model``, each phase's ODE must contain the per-phase engine.
 
         ``MultiPhasePropulsionBuilder`` (installed via
-        ``engine.install_propulsion``) builds a per-phase ``PropulsionMission``
+        ``engine.swap_propulsion_builder``) builds a per-phase ``PropulsionMission``
         using the engine registered for that phase. The mission group adds each
         engine as a subgroup under the engine's own name, giving the path
         ``traj.phases.{phase}.rhs_all.solver_sub.propulsion.{engine_name}``.
@@ -98,10 +98,7 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
 
         for phase, (csv, _) in _PHASE_ENGINE_MAP.items():
             phase_engine = engine._phase_engines[phase]
-            path = (
-                f'traj.phases.{phase}.rhs_all.solver_sub.propulsion.'
-                f'{phase_engine.name}'
-            )
+            path = f'traj.phases.{phase}.rhs_all.solver_sub.propulsion.{phase_engine.name}'
             subsys = prob.model._get_subsystem(path)
             self.assertIsNotNone(
                 subsys,
