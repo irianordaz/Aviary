@@ -11,17 +11,17 @@ engine performance characteristics and fuel density.
 
 Modules
 -------
-table_builder : Contains MultiEngineFuelBurnComp, EngineTableBuilder, and
-    MultiEngineTableBuilder classes for multi-fuel engine simulation.
+phased_engine_builder : Contains MultiEngineFuelBurnComp, EngineTableBuilder, and
+    PhasedEngineTableBuilder classes for multi-fuel engine simulation.
 
 Examples
 --------
 Create a multi-engine configuration with different fuel types per phase::
 
     from copy import deepcopy
-    from multi_fuel.table_builder import MultiEngineTableBuilder
+    from multi_fuel.phased_engine_builder import PhasedEngineTableBuilder
 
-    engine = MultiEngineTableBuilder(
+    engine = PhasedEngineTableBuilder(
         phase_engine_map={
             'climb':   ('models/engines/turbofan_28k.csv', 6.7),
             'cruise':  ('models/engines/turbofan_22k.csv', 6.4),

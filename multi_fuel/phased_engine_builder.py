@@ -7,7 +7,7 @@ aircraft uses different fuel types (e.g., Jet-A for climb, SAF blend for cruise,
 LNG for descent), each with its own performance characteristics and fuel density.
 
 The module is implemented as a pure SubsystemBuilder-based extension: the main
-class ``MultiEngineTableBuilder`` inherits from
+class ``PhasedEngineTableBuilder`` inherits from
 ``aviary.subsystems.subsystem_builder.SubsystemBuilder`` and relies only on the
 framework hooks exposed by that base class (``build_post_mission`` in particular).
 Per-phase fuel burn is computed post-mission from the mass timeseries of each
@@ -25,7 +25,7 @@ EngineTableBuilder
     the per-engine Aircraft.Fuel.DENSITY option. It is used as the actual
     propulsion EngineModel registered with the AviaryProblem.
 
-MultiEngineTableBuilder
+PhasedEngineTableBuilder
     SubsystemBuilder-based engine builder that holds a mapping of mission phases
     to engine decks (with optional per-phase fuel densities). It is registered
     as an external subsystem; its ``build_post_mission`` adds the
@@ -43,9 +43,9 @@ TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 Usage
 -----
     from copy import deepcopy
-    from multi_fuel.table_builder import MultiEngineTableBuilder
+    from multi_fuel.phased_engine_builder import PhasedEngineTableBuilder
 
-    engine = MultiEngineTableBuilder(
+    engine = PhasedEngineTableBuilder(
         phase_engine_map={
             'climb':   ('models/engines/turbofan_28k.csv', 6.7),
             'cruise':  ('models/engines/turbofan_22k.csv', 6.4),
@@ -105,9 +105,7 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         self._unique_entries = unique_entries
         num_entries = len(unique_entries)
         self.add_output(TOTAL_MULTI_FUEL_MASS, val=0.0, shape=num_entries, units='lbm')
-        self.add_output(
-            TOTAL_MULTI_FUEL_VOLUME, val=0.0, shape=num_entries, units='galUS'
-        )
+        self.add_output(TOTAL_MULTI_FUEL_VOLUME, val=0.0, shape=num_entries, units='galUS')
 
     def setup_partials(self):
         phase_engine_map = self.options['phase_engine_map']
@@ -204,7 +202,7 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
     engine model registered for the current phase (via ``phase_engines``) and
     build a ``PropulsionMission`` around that engine. The phase identity is
     read from ``subsystem_options['phase_name']`` (populated upstream by
-    ``MultiEngineTableBuilder.configure_phase_info``).
+    ``PhasedEngineTableBuilder.configure_phase_info``).
 
     Falling back to ``default_engine`` for unknown phases keeps callers from
     accidentally breaking when a phase is not in ``phase_engines`` (e.g., a
@@ -231,9 +229,7 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
         phase_engines: dict = None,
         default_engine=None,
     ):
-        super().__init__(
-            name=name, meta_data=meta_data, engine_models=[default_engine]
-        )
+        super().__init__(name=name, meta_data=meta_data, engine_models=[default_engine])
         self._phase_engines = phase_engines or {}
         self._default_engine = default_engine
 
@@ -249,7 +245,7 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
         )
 
 
-class MultiEngineTableBuilder(SubsystemBuilder):
+class PhasedEngineTableBuilder(SubsystemBuilder):
     """SubsystemBuilder that wires multi-fuel engine decks per mission phase.
 
     Holds a mapping of mission phases to engine deck CSV files and optional
@@ -296,9 +292,7 @@ class MultiEngineTableBuilder(SubsystemBuilder):
             )
             resolved = get_path(engine_csv)
             if not resolved.is_file():
-                raise FileNotFoundError(
-                    f"Engine CSV for phase '{phase}' not found: {resolved}"
-                )
+                raise FileNotFoundError(f"Engine CSV for phase '{phase}' not found: {resolved}")
             self.phase_engine_map[phase] = (engine_csv, fuel_density)
 
             engine_options = AviaryValues()
@@ -307,9 +301,7 @@ class MultiEngineTableBuilder(SubsystemBuilder):
                 name=f'{name}_{phase}', engine_csv=engine_csv, options=engine_options
             )
 
-    def configure_phase_info(
-        self, phase_info: dict, propulsion_name: str = 'propulsion'
-    ) -> dict:
+    def configure_phase_info(self, phase_info: dict, propulsion_name: str = 'propulsion') -> dict:
         """Tag each phase's subsystem_options with its name under ``propulsion``.
 
         Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']

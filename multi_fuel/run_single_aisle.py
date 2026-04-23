@@ -6,7 +6,7 @@ engine decks / fuel types via a post-mission accounting subsystem built on top o
 ``aviary.subsystems.subsystem_builder.SubsystemBuilder``.
 
 The mission profile consists of three phases (climb, cruise, descent). The multi-
-fuel reporting is provided by ``MultiEngineTableBuilder`` which is registered as
+fuel reporting is provided by ``PhasedEngineTableBuilder`` which is registered as
 an external SubsystemBuilder; Aviary's actual propulsion uses the EngineDeck it
 builds automatically from ``Aircraft.Engine.DATA_FILE`` in the inputs dictionary.
 
@@ -28,25 +28,23 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
 from aviary.models.missions.energy_state_default import phase_info
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft, Mission
-from multi_fuel.table_builder import (
+from multi_fuel.phased_engine_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
-    MultiEngineTableBuilder,
+    PhasedEngineTableBuilder,
 )
 
 phase_info = deepcopy(phase_info)
 inputs = deepcopy(lsa2_inputs)
 
-inputs.set_val(
-    Aircraft.Engine.DATA_FILE, get_path('multi_fuel/engines/turbofan_22k.csv')
-)
+inputs.set_val(Aircraft.Engine.DATA_FILE, get_path('multi_fuel/engines/turbofan_22k.csv'))
 inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
-engine = MultiEngineTableBuilder(
+engine = PhasedEngineTableBuilder(
     phase_engine_map={
         'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.7),
         'cruise': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
@@ -57,7 +55,7 @@ engine = MultiEngineTableBuilder(
 if __name__ == '__main__':
     prob = AviaryProblem()
 
-    # Tag each phase so MultiEngineTableBuilder.build_mission can dispatch to
+    # Tag each phase so PhasedEngineTableBuilder.build_mission can dispatch to
     # the CSV/density configured for that phase in phase_engine_map.
     phase_info = engine.configure_phase_info(phase_info)
     # TODO: This is just a phase_info reconfiguration that can be done in

@@ -17,7 +17,7 @@ from openmdao.utils.assert_utils import assert_near_equal
 from aviary.subsystems.propulsion.propulsion_builder import CorePropulsionBuilder
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft
-from multi_fuel.table_builder import (
+from multi_fuel.phased_engine_builder import (
     _DEFAULT_FUEL_DENSITY_LBM_GAL,
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,

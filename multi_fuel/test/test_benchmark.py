@@ -24,7 +24,7 @@ from aviary.models.aircraft.large_single_aisle_2.large_single_aisle_2_FLOPS_data
 from aviary.models.missions.energy_state_default import phase_info
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft, Mission
-from multi_fuel.table_builder import (
+from multi_fuel.phased_engine_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
