@@ -35,7 +35,7 @@ MultiEngineTableBuilder
 
 Variable names
 --------------
-TOTAL_FUEL_MULTI, TOTAL_FUEL_VOLUME_MULTI
+TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
     Local output variable names used by ``MultiEngineFuelBurnComp``. These are
     defined here rather than in Aviary's Mission namespace so the module works
     with an unmodified Aviary install.
@@ -55,7 +55,7 @@ Usage
 
     prob = AviaryProblem()
     prob.load_inputs(inputs, phase_info)
-    prob.load_external_subsystems([engine.get_default_engine(), engine])
+    prob.load_external_subsystems([engine])
     prob.check_and_preprocess_inputs()
     prob.build_model()
     engine.wire_trajectory(prob.model)
@@ -77,8 +77,8 @@ from aviary.variable_info.variables import Aircraft
 
 # Output variable names produced by MultiEngineFuelBurnComp. Defined locally so
 # the module does not require Aviary to register new entries in Mission.
-TOTAL_FUEL_MULTI = 'mission:total_fuel_multi'
-TOTAL_FUEL_VOLUME_MULTI = 'mission:total_fuel_volume_multi'
+TOTAL_MULTI_FUEL_MASS = 'mission:total_multi_fuel_mass'
+TOTAL_MULTI_FUEL_VOLUME = 'mission:total_multi_fuel_volume'
 
 # Aviary default fuel density used when no override is provided.
 _DEFAULT_FUEL_DENSITY_LBM_GAL = _MetaData[Aircraft.Fuel.DENSITY]['default_value']
@@ -104,9 +104,9 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         unique_entries = list(dict.fromkeys(phase_engine_map.values()))
         self._unique_entries = unique_entries
         num_entries = len(unique_entries)
-        self.add_output(TOTAL_FUEL_MULTI, val=0.0, shape=num_entries, units='lbm')
+        self.add_output(TOTAL_MULTI_FUEL_MASS, val=0.0, shape=num_entries, units='lbm')
         self.add_output(
-            TOTAL_FUEL_VOLUME_MULTI, val=0.0, shape=num_entries, units='galUS'
+            TOTAL_MULTI_FUEL_VOLUME, val=0.0, shape=num_entries, units='galUS'
         )
 
     def setup_partials(self):
@@ -118,28 +118,28 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
             density = entry[1]
 
             self.declare_partials(
-                TOTAL_FUEL_MULTI,
+                TOTAL_MULTI_FUEL_MASS,
                 f'mass_start_{phase}',
                 rows=[idx],
                 cols=[0],
                 val=1.0,
             )
             self.declare_partials(
-                TOTAL_FUEL_MULTI,
+                TOTAL_MULTI_FUEL_MASS,
                 f'mass_end_{phase}',
                 rows=[idx],
                 cols=[0],
                 val=-1.0,
             )
             self.declare_partials(
-                TOTAL_FUEL_VOLUME_MULTI,
+                TOTAL_MULTI_FUEL_VOLUME,
                 f'mass_start_{phase}',
                 rows=[idx],
                 cols=[0],
                 val=1.0 / density,
             )
             self.declare_partials(
-                TOTAL_FUEL_VOLUME_MULTI,
+                TOTAL_MULTI_FUEL_VOLUME,
                 f'mass_end_{phase}',
                 rows=[idx],
                 cols=[0],
@@ -160,8 +160,8 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
             mass_totals[unique_entries.index(entry)] += phase_fuel_mass
 
         densities = np.array([entry[1] for entry in unique_entries])
-        outputs[TOTAL_FUEL_MULTI] = mass_totals
-        outputs[TOTAL_FUEL_VOLUME_MULTI] = mass_totals / densities
+        outputs[TOTAL_MULTI_FUEL_MASS] = mass_totals
+        outputs[TOTAL_MULTI_FUEL_VOLUME] = mass_totals / densities
 
 
 class EngineTableBuilder(EngineDeck):
@@ -307,20 +307,6 @@ class MultiEngineTableBuilder(SubsystemBuilder):
                 name=f'{name}_{phase}', csv_path=csv_path, options=engine_options
             )
 
-    def get_default_engine(self) -> EngineTableBuilder:
-        """Return the first configured engine for use as Aviary's EngineModel.
-
-        The returned ``EngineTableBuilder`` is passed to
-        ``AviaryProblem.load_external_subsystems`` so that Aviary's
-        ``check_and_preprocess_inputs`` step has an engine to construct the
-        initial ``CorePropulsionBuilder``. After that step,
-        ``install_propulsion`` replaces that builder with a phase-aware one.
-        "First" is defined by insertion order of ``phase_engine_map``.
-        """
-        if not self._phase_engines:
-            raise ValueError(f'{self.name}: phase_engine_map is empty.')
-        return next(iter(self._phase_engines.values()))
-
     def configure_phase_info(
         self, phase_info: dict, propulsion_name: str = 'propulsion'
     ) -> dict:
@@ -376,12 +362,15 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         propulsion_name : str
             Name of the propulsion subsystem to replace.
         """
+        if not self._phase_engines:
+            raise ValueError(f'{self.name}: phase_engine_map is empty.')
+        default_engine = next(iter(self._phase_engines.values()))
         for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
             if getattr(subsystem, 'name', None) == propulsion_name:
                 aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
                     name=propulsion_name,
                     phase_engines=self._phase_engines,
-                    default_engine=self.get_default_engine(),
+                    default_engine=default_engine,
                 )
                 return
         raise RuntimeError(

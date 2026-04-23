@@ -19,8 +19,8 @@ from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft
 from multi_fuel.table_builder import (
     _DEFAULT_FUEL_DENSITY_LBM_GAL,
-    TOTAL_FUEL_MULTI,
-    TOTAL_FUEL_VOLUME_MULTI,
+    TOTAL_MULTI_FUEL_MASS,
+    TOTAL_MULTI_FUEL_VOLUME,
     EngineTableBuilder,
     MultiEngineFuelBurnComp,
     MultiEngineTableBuilder,
@@ -63,8 +63,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
         )
         prob.run_model()
 
-        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+        mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+        volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 
         assert_near_equal(mass, [5000.0, 4000.0, 3000.0], tolerance=1e-8)
         assert_near_equal(
@@ -88,8 +88,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
         )
         prob.run_model()
 
-        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+        mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+        volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 
         self.assertEqual(mass.shape, (2,))
         assert_near_equal(mass, [5000.0, 4000.0], tolerance=1e-8)
@@ -110,8 +110,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
         )
         prob.run_model()
 
-        mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-        volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+        mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+        volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
 
         self.assertEqual(mass.shape, (1,))
         assert_near_equal(mass, [9000.0], tolerance=1e-8)
@@ -225,18 +225,6 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
             },
         )
 
-    def test_get_default_engine_returns_first_entry(self):
-        builder = self._make_builder()
-        default = builder.get_default_engine()
-        self.assertEqual(
-            str(default.get_val(Aircraft.Engine.DATA_FILE)),
-            str(get_path(_CSV_28K)),
-        )
-
-    def test_get_default_engine_empty_raises(self):
-        with self.assertRaises(ValueError):
-            MultiEngineTableBuilder().get_default_engine()
-
     def test_default_builder_name(self):
         self.assertEqual(MultiEngineTableBuilder().name, 'multi_engine_table')
 
@@ -321,7 +309,7 @@ class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
         propulsion_builder = MultiPhasePropulsionBuilder(
             name='propulsion',
             phase_engines=outer_builder._phase_engines,
-            default_engine=outer_builder.get_default_engine(),
+            default_engine=next(iter(outer_builder._phase_engines.values())),
         )
         return propulsion_builder, outer_builder
 
@@ -357,7 +345,7 @@ class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
             )
             self.assertEqual(
                 mock_propulsion_mission.call_args.kwargs['engine_models'],
-                [outer_builder.get_default_engine()],
+                [next(iter(outer_builder._phase_engines.values()))],
             )
 
     def test_missing_subsystem_options_falls_back_to_default(self):
@@ -373,7 +361,7 @@ class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
             )
             self.assertEqual(
                 mock_propulsion_mission.call_args.kwargs['engine_models'],
-                [outer_builder.get_default_engine()],
+                [next(iter(outer_builder._phase_engines.values()))],
             )
 
 
@@ -384,9 +372,8 @@ class TestInstallPropulsion(unittest.TestCase):
         builder = MultiEngineTableBuilder(
             phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
         )
-        default_engine = builder.get_default_engine()
         original_propulsion = CorePropulsionBuilder(
-            'propulsion', engine_models=[default_engine]
+            'propulsion', engine_models=[next(iter(builder._phase_engines.values()))]
         )
         aviary_group = _StubAviaryGroup(
             [original_propulsion, object(), object()]

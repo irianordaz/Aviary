@@ -25,8 +25,8 @@ from aviary.models.missions.energy_state_default import phase_info
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft, Mission
 from multi_fuel.table_builder import (
-    TOTAL_FUEL_MULTI,
-    TOTAL_FUEL_VOLUME_MULTI,
+    TOTAL_MULTI_FUEL_MASS,
+    TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
 )
 
@@ -37,7 +37,11 @@ _PHASE_ENGINE_MAP = {
 }
 
 
-def _set_engine_inputs(inputs):
+def _set_engine_inputs(inputs, phase_engine_map):
+    first_csv = next(iter(phase_engine_map.values()))
+    if isinstance(first_csv, tuple):
+        first_csv = first_csv[0]
+    inputs.set_val(Aircraft.Engine.DATA_FILE, get_path(first_csv))
     inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
     inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
     inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
@@ -48,7 +52,7 @@ def _set_engine_inputs(inputs):
 def _build_problem(phase_engine_map):
     """Build (but do not yet run) an AviaryProblem mirroring ``run_single_aisle``."""
     inputs = deepcopy(lsa2_inputs)
-    _set_engine_inputs(inputs)
+    _set_engine_inputs(inputs, phase_engine_map)
     phases = deepcopy(phase_info)
 
     engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
@@ -56,7 +60,7 @@ def _build_problem(phase_engine_map):
 
     prob = AviaryProblem(verbosity=0)
     prob.load_inputs(inputs, phases)
-    prob.load_external_subsystems([engine.get_default_engine(), engine])
+    prob.load_external_subsystems([engine])
     prob.check_and_preprocess_inputs()
     # Swap the default CorePropulsionBuilder for a phase-aware one so each
     # phase's ODE is built around that phase's engine.
@@ -137,8 +141,8 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
         self.assertGreater(total_fuel, 10000.0)
         self.assertLess(total_fuel, 100000.0)
 
-        fuel_mass = prob.get_val(TOTAL_FUEL_MULTI, units='lbm')
-        fuel_volume = prob.get_val(TOTAL_FUEL_VOLUME_MULTI, units='galUS')
+        fuel_mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+        fuel_volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
         densities = [d for _, d in _PHASE_ENGINE_MAP.values()]
         self.assertEqual(fuel_mass.shape, (len(densities),))
         self.assertEqual(fuel_volume.shape, (len(densities),))
