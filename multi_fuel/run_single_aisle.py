@@ -74,7 +74,7 @@ if __name__ == '__main__':
     # default CorePropulsionBuilder; swap it for a phase-aware one so each
     # phase's ODE builds a PropulsionMission around the engine configured for
     # that phase. Must happen before build_model() materializes the ODEs.
-    engine.install_propulsion(prob.model)
+    engine.swap_propulsion_builder(prob.model)
     # TODO: Can this be added as a hook in AIMEE?
 
     prob.build_model()

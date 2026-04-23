@@ -254,7 +254,7 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
     - ``configure_phase_info``: tags each phase's ``subsystem_options`` with
       its ``phase_name`` under the propulsion subsystem's key, so the
       per-phase engine selector knows which engine to use.
-    - ``install_propulsion``: swaps Aviary's default ``CorePropulsionBuilder``
+    - ``swap_propulsion_builder``: swaps Aviary's default ``CorePropulsionBuilder``
       with a ``MultiPhasePropulsionBuilder`` that selects the per-phase engine
       when each phase's ODE is built.
     - ``build_post_mission``: contributes a component that aggregates fuel
@@ -319,7 +319,7 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
             Name of the propulsion subsystem in Aviary (default
             ``'propulsion'``). Must match the ``name`` of the
             ``MultiPhasePropulsionBuilder`` installed in
-            ``install_propulsion``.
+            ``swap_propulsion_builder``.
 
         Returns
         -------
@@ -336,7 +336,7 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
             propulsion_options['phase_name'] = phase_name
         return phase_info
 
-    def install_propulsion(self, aviary_group, propulsion_name: str = 'propulsion'):
+    def swap_propulsion_builder(self, aviary_group, propulsion_name: str = 'propulsion'):
         """Swap Aviary's ``CorePropulsionBuilder`` for a phase-aware one.
 
         Must be called after ``check_and_preprocess_inputs()`` (which adds
