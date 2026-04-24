@@ -18,7 +18,7 @@ Classes
 MultiEngineFuelBurnComp
     OpenMDAO ExplicitComponent that computes per-engine total fuel burn (mass
     and volume) from phase start/end gross-mass inputs, summing fuel burn across
-    phases that share the same (csv, fuel_density) pair.
+    phases that share the same (csv, fuel_density, scale_factor) tuple.
 
 EngineTableBuilder
     Thin wrapper around Aviary's EngineDeck that resolves a CSV path and sets
@@ -27,9 +27,9 @@ EngineTableBuilder
 
 PhasedEngineTableBuilder
     SubsystemBuilder-based engine builder that holds a mapping of mission phases
-    to engine decks (with optional per-phase fuel densities). It is registered
-    as an external subsystem; its ``build_post_mission`` adds the
-    ``MultiEngineFuelBurnComp`` to the post-mission group, and its
+    to engine decks (with optional per-phase fuel densities and scale factors).
+    It is registered as an external subsystem; its ``build_post_mission`` adds
+    the ``MultiEngineFuelBurnComp`` to the post-mission group, and its
     ``wire_trajectory`` helper connects phase mass timeseries to that component
     after ``AviaryProblem.build_model()``.
 
@@ -67,7 +67,9 @@ import numpy as np
 import openmdao.api as om
 
 from aviary.subsystems.propulsion.engine_deck import EngineDeck
-from aviary.subsystems.propulsion.propulsion_builder import CorePropulsionBuilder
+from aviary.subsystems.propulsion.propulsion_builder import (
+    CorePropulsionBuilder,
+)
 from aviary.subsystems.propulsion.propulsion_mission import PropulsionMission
 from aviary.subsystems.subsystem_builder import SubsystemBuilder
 from aviary.utils.aviary_values import AviaryValues
@@ -81,15 +83,20 @@ TOTAL_MULTI_FUEL_MASS = 'mission:total_multi_fuel_mass'
 TOTAL_MULTI_FUEL_VOLUME = 'mission:total_multi_fuel_volume'
 
 # Aviary default fuel density used when no override is provided.
-_DEFAULT_FUEL_DENSITY_LBM_GAL = _MetaData[Aircraft.Fuel.DENSITY]['default_value']
+_DEFAULT_FUEL_DENSITY_LBM_GAL = _MetaData[Aircraft.Fuel.DENSITY][
+    'default_value'
+]
+
+# Default engine scale factor when not specified per phase.
+_DEFAULT_SCALE_FACTOR = 1.0
 
 
 class MultiEngineFuelBurnComp(om.ExplicitComponent):
     """Compute per-engine total fuel burn from phase start/end gross-mass inputs.
 
     Sums ``mass_start - mass_end`` for each phase in ``phase_engine_map`` and
-    aggregates by unique ``(csv, fuel_density)`` pair. Outputs both mass (lbm)
-    and volume (galUS) totals per unique engine configuration.
+    aggregates by unique ``(csv, fuel_density, scale_factor)`` tuple. Outputs
+    both mass (lbm) and volume (galUS) totals per unique engine configuration.
     """
 
     def initialize(self):
@@ -104,8 +111,12 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         unique_entries = list(dict.fromkeys(phase_engine_map.values()))
         self._unique_entries = unique_entries
         num_entries = len(unique_entries)
-        self.add_output(TOTAL_MULTI_FUEL_MASS, val=0.0, shape=num_entries, units='lbm')
-        self.add_output(TOTAL_MULTI_FUEL_VOLUME, val=0.0, shape=num_entries, units='galUS')
+        self.add_output(
+            TOTAL_MULTI_FUEL_MASS, val=0.0, shape=num_entries, units='lbm'
+        )
+        self.add_output(
+            TOTAL_MULTI_FUEL_VOLUME, val=0.0, shape=num_entries, units='galUS'
+        )
 
     def setup_partials(self):
         phase_engine_map = self.options['phase_engine_map']
@@ -113,7 +124,7 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
 
         for phase, engine_info in phase_engine_map.items():
             idx = unique_entries.index(engine_info)
-            _engine_csv, fuel_density = engine_info
+            _engine_csv, fuel_density, _scale_factor = engine_info
 
             self.declare_partials(
                 TOTAL_MULTI_FUEL_MASS,
@@ -153,7 +164,9 @@ class MultiEngineFuelBurnComp(om.ExplicitComponent):
         for phase, engine_info in phase_engine_map.items():
             mass_start = inputs[f'mass_start_{phase}'].flat[0]
             mass_end = inputs[f'mass_end_{phase}'].flat[0]
-            mass_totals[unique_entries.index(engine_info)] += mass_start - mass_end
+            mass_totals[unique_entries.index(engine_info)] += (
+                mass_start - mass_end
+            )
 
         densities = np.array([engine_info[1] for engine_info in unique_entries])
         outputs[TOTAL_MULTI_FUEL_MASS] = mass_totals
@@ -229,11 +242,15 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
         phase_engines: dict = None,
         default_engine=None,
     ):
-        super().__init__(name=name, meta_data=meta_data, engine_models=[default_engine])
+        super().__init__(
+            name=name, meta_data=meta_data, engine_models=[default_engine]
+        )
         self._phase_engines = phase_engines or {}
         self._default_engine = default_engine
 
-    def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
+    def build_mission(
+        self, num_nodes, aviary_inputs, user_options, subsystem_options
+    ):
         phase_name = (subsystem_options or {}).get('phase_name')
         phase_engine = self._phase_engines.get(phase_name, self._default_engine)
         return PropulsionMission(
@@ -249,7 +266,8 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
     """SubsystemBuilder that wires multi-fuel engine decks per mission phase.
 
     Holds a mapping of mission phases to engine deck CSV files and optional
-    per-phase fuel densities, and provides three integration hooks:
+    per-phase fuel densities and scale factors, and provides three integration
+    hooks:
 
     - ``configure_phase_info``: tags each phase's ``subsystem_options`` with
       its ``phase_name`` under the propulsion subsystem's key, so the
@@ -258,8 +276,8 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
       with a ``MultiPhasePropulsionBuilder`` that selects the per-phase engine
       when each phase's ODE is built.
     - ``build_post_mission``: contributes a component that aggregates fuel
-      burn (mass and volume) per unique ``(csv, density)`` pair from the
-      phase mass timeseries, after the trajectory has been wired.
+      burn (mass and volume) per unique ``(csv, density, scale_factor)`` tuple
+      from the phase mass timeseries, after the trajectory has been wired.
 
     Parameters
     ----------
@@ -268,10 +286,10 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
         post-mission component within the ``post_mission`` group. Default
         ``'multi_engine_table'``.
     phase_engine_map : dict, optional
-        Mapping of phase name to engine configuration. Each value can be either
-        a string CSV path (uses default fuel density) or a ``(engine_csv,
-        fuel_density)`` tuple. Paths may be Aviary-relative or absolute. Default
-        None (empty mapping).
+        Mapping of phase name to engine configuration. Each value can be a
+        string CSV path (uses defaults), a ``(engine_csv, fuel_density)``
+        2-tuple, or a ``(engine_csv, fuel_density, scale_factor)`` 3-tuple.
+        Paths may be Aviary-relative or absolute. Default None (empty mapping).
     """
 
     def __init__(
@@ -285,23 +303,66 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
         self._phase_engines = {}
 
         for phase, engine_info in (phase_engine_map or {}).items():
-            engine_csv, fuel_density = (
-                (engine_info, _DEFAULT_FUEL_DENSITY_LBM_GAL)
-                if isinstance(engine_info, str)
-                else engine_info
+            engine_csv, fuel_density, scale_factor = self._parse_engine_info(
+                engine_info, phase
             )
             resolved = get_path(engine_csv)
             if not resolved.is_file():
-                raise FileNotFoundError(f"Engine CSV for phase '{phase}' not found: {resolved}")
-            self.phase_engine_map[phase] = (engine_csv, fuel_density)
-
-            engine_options = AviaryValues()
-            engine_options.set_val(Aircraft.Fuel.DENSITY, fuel_density, 'lbm/galUS')
-            self._phase_engines[phase] = EngineTableBuilder(
-                name=f'{name}_{phase}', engine_csv=engine_csv, options=engine_options
+                raise FileNotFoundError(
+                    f"Engine CSV for phase '{phase}' not found: {resolved}"
+                )
+            self.phase_engine_map[phase] = (
+                engine_csv,
+                fuel_density,
+                scale_factor,
             )
 
-    def configure_phase_info(self, phase_info: dict, propulsion_name: str = 'propulsion') -> dict:
+            engine_options = AviaryValues()
+            engine_options.set_val(
+                Aircraft.Fuel.DENSITY, fuel_density, 'lbm/galUS'
+            )
+            engine_options.set_val(Aircraft.Engine.SCALE_FACTOR, scale_factor)
+            self._phase_engines[phase] = EngineTableBuilder(
+                name=f'{name}_{phase}',
+                engine_csv=engine_csv,
+                options=engine_options,
+            )
+
+    @staticmethod
+    def _parse_engine_info(engine_info, phase):
+        """Normalize engine_info to a 3-tuple (csv, density, scale_factor).
+
+        Parameters
+        ----------
+        engine_info : str or tuple
+            A CSV path string, a 2-tuple (csv, density), or a 3-tuple
+            (csv, density, scale_factor).
+        phase : str
+            Phase name, used in error messages.
+
+        Returns
+        -------
+        tuple
+            (engine_csv, fuel_density, scale_factor)
+        """
+        if isinstance(engine_info, str):
+            return (
+                engine_info,
+                _DEFAULT_FUEL_DENSITY_LBM_GAL,
+                _DEFAULT_SCALE_FACTOR,
+            )
+        if len(engine_info) == 2:
+            return (*engine_info, _DEFAULT_SCALE_FACTOR)
+        if len(engine_info) == 3:
+            return engine_info
+        raise ValueError(
+            f"phase_engine_map entry for phase '{phase}' must be a str, "
+            f'2-tuple, or 3-tuple, got {len(engine_info)}-tuple'
+        )
+
+    def configure_phase_info(
+        self, phase_info: dict, propulsion_name: str = 'propulsion'
+    ) -> dict:
         """Tag each phase's subsystem_options with its name under ``propulsion``.
 
         Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']
@@ -332,11 +393,15 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
             if phase_name in skip:
                 continue
             subsystem_options = phase_opts.setdefault('subsystem_options', {})
-            propulsion_options = subsystem_options.setdefault(propulsion_name, {})
+            propulsion_options = subsystem_options.setdefault(
+                propulsion_name, {}
+            )
             propulsion_options['phase_name'] = phase_name
         return phase_info
 
-    def swap_propulsion_builder(self, aviary_group, propulsion_name: str = 'propulsion'):
+    def swap_propulsion_builder(
+        self, aviary_group, propulsion_name: str = 'propulsion'
+    ):
         """Swap Aviary's ``CorePropulsionBuilder`` for a phase-aware one.
 
         Must be called after ``check_and_preprocess_inputs()`` (which adds
@@ -359,10 +424,12 @@ class PhasedEngineTableBuilder(SubsystemBuilder):
         default_engine = next(iter(self._phase_engines.values()))
         for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
             if getattr(subsystem, 'name', None) == propulsion_name:
-                aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
-                    name=propulsion_name,
-                    phase_engines=self._phase_engines,
-                    default_engine=default_engine,
+                aviary_group.subsystems[subsystem_index] = (
+                    MultiPhasePropulsionBuilder(
+                        name=propulsion_name,
+                        phase_engines=self._phase_engines,
+                        default_engine=default_engine,
+                    )
                 )
                 return
         raise RuntimeError(

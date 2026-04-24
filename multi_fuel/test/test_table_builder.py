@@ -19,12 +19,13 @@ from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft
 from multi_fuel.phased_engine_builder import (
     _DEFAULT_FUEL_DENSITY_LBM_GAL,
+    _DEFAULT_SCALE_FACTOR,
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
     EngineTableBuilder,
     MultiEngineFuelBurnComp,
-    PhasedEngineTableBuilder,
     MultiPhasePropulsionBuilder,
+    PhasedEngineTableBuilder,
 )
 
 _CSV_28K = 'multi_fuel/engines/turbofan_28k.csv'
@@ -43,11 +44,11 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
     """Verify per-phase fuel density is used in the volume calculation."""
 
     def test_volume_uses_per_phase_density(self):
-        # Three unique (csv, density) entries → each volume uses its own density.
+        # Three unique (csv, density, scale) entries, each volume uses its density.
         phase_engine_map = {
-            'climb': (_CSV_28K, 6.7),
-            'cruise': (_CSV_22K, 6.4),
-            'descent': (_CSV_24K, 4.2),
+            'climb': (_CSV_28K, 6.7, _DEFAULT_SCALE_FACTOR),
+            'cruise': (_CSV_22K, 6.4, _DEFAULT_SCALE_FACTOR),
+            'descent': (_CSV_24K, 4.2, _DEFAULT_SCALE_FACTOR),
         }
         fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
@@ -75,8 +76,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
 
     def test_same_csv_different_density_creates_separate_entries(self):
         phase_engine_map = {
-            'climb': (_CSV_22K, 6.7),
-            'cruise': (_CSV_22K, 6.4),
+            'climb': (_CSV_22K, 6.7, _DEFAULT_SCALE_FACTOR),
+            'cruise': (_CSV_22K, 6.4, _DEFAULT_SCALE_FACTOR),
         }
         fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
@@ -97,8 +98,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
 
     def test_same_csv_same_density_aggregates(self):
         phase_engine_map = {
-            'climb': (_CSV_22K, 6.4),
-            'cruise': (_CSV_22K, 6.4),
+            'climb': (_CSV_22K, 6.4, _DEFAULT_SCALE_FACTOR),
+            'cruise': (_CSV_22K, 6.4, _DEFAULT_SCALE_FACTOR),
         }
         fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
@@ -119,8 +120,8 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
 
     def test_partials(self):
         phase_engine_map = {
-            'climb': (_CSV_28K, 6.7),
-            'cruise': (_CSV_22K, 6.4),
+            'climb': (_CSV_28K, 6.7, _DEFAULT_SCALE_FACTOR),
+            'cruise': (_CSV_22K, 6.4, _DEFAULT_SCALE_FACTOR),
         }
         fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
         prob = om.Problem()
@@ -141,6 +142,53 @@ class TestMultiEngineFuelBurnComp(unittest.TestCase):
                         0.0,
                         tolerance=1e-5,
                     )
+
+    def test_same_csv_density_different_scale_separate_entries(self):
+        """Different scale factors create separate entries even with same CSV/density."""
+        phase_engine_map = {
+            'climb': (_CSV_22K, 6.4, 1.0),
+            'cruise': (_CSV_22K, 6.4, 0.5),
+        }
+        fuel_burn_comp = MultiEngineFuelBurnComp(phase_engine_map=phase_engine_map)
+        prob = om.Problem()
+        prob.model.add_subsystem('fuel_burn', fuel_burn_comp, promotes=['*'])
+        prob.setup()
+        _set_phase_masses(
+            prob,
+            {'climb': (100000.0, 95000.0), 'cruise': (95000.0, 91000.0)},
+        )
+        prob.run_model()
+
+        mass = prob.get_val(TOTAL_MULTI_FUEL_MASS, units='lbm')
+        volume = prob.get_val(TOTAL_MULTI_FUEL_VOLUME, units='galUS')
+
+        self.assertEqual(mass.shape, (2,))
+        assert_near_equal(mass, [5000.0, 4000.0], tolerance=1e-8)
+        assert_near_equal(volume, [5000.0 / 6.4, 4000.0 / 6.4], tolerance=1e-8)
+
+    def test_parse_engine_info_string(self):
+        csv, density, scale = PhasedEngineTableBuilder._parse_engine_info(_CSV_28K, 'climb')
+        self.assertEqual(csv, _CSV_28K)
+        self.assertEqual(density, _DEFAULT_FUEL_DENSITY_LBM_GAL)
+        self.assertEqual(scale, _DEFAULT_SCALE_FACTOR)
+
+    def test_parse_engine_info_2tuple(self):
+        csv, density, scale = PhasedEngineTableBuilder._parse_engine_info((_CSV_28K, 6.7), 'climb')
+        self.assertEqual(csv, _CSV_28K)
+        self.assertAlmostEqual(density, 6.7, places=9)
+        self.assertEqual(scale, _DEFAULT_SCALE_FACTOR)
+
+    def test_parse_engine_info_3tuple(self):
+        csv, density, scale = PhasedEngineTableBuilder._parse_engine_info(
+            (_CSV_28K, 6.7, 0.8), 'climb'
+        )
+        self.assertEqual(csv, _CSV_28K)
+        self.assertAlmostEqual(density, 6.7, places=9)
+        self.assertAlmostEqual(scale, 0.8, places=9)
+
+    def test_parse_engine_info_invalid_length(self):
+        with self.assertRaises(ValueError):
+            PhasedEngineTableBuilder._parse_engine_info((_CSV_28K, 6.7, 0.8, 'extra'), 'climb')
 
 
 class TestEngineTableBuilder(unittest.TestCase):
@@ -219,6 +267,43 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
                 'multi_engine_table_cruise',
                 'multi_engine_table_descent',
             },
+        )
+
+    def test_each_phase_engine_uses_the_requested_scale_factor(self):
+        """Each per-phase engine must carry the requested SCALE_FACTOR."""
+        builder = PhasedEngineTableBuilder(
+            phase_engine_map={
+                'climb': (_CSV_28K, 6.7, 1.0),
+                'cruise': (_CSV_22K, 6.4, 0.5),
+                'descent': (_CSV_24K, 4.2, 1.5),
+            },
+        )
+        expected = {'climb': 1.0, 'cruise': 0.5, 'descent': 1.5}
+        for phase, scale_factor in expected.items():
+            engine = builder._phase_engines[phase]
+            self.assertAlmostEqual(
+                engine.get_val(Aircraft.Engine.SCALE_FACTOR),
+                scale_factor,
+                places=9,
+                msg=f'phase {phase!r} should have scale_factor {scale_factor}',
+            )
+
+    def test_2tuple_uses_default_scale_factor(self):
+        """A 2-tuple entry should default SCALE_FACTOR to 1.0."""
+        builder = PhasedEngineTableBuilder(phase_engine_map={'climb': (_CSV_28K, 6.7)})
+        self.assertAlmostEqual(
+            builder._phase_engines['climb'].get_val(Aircraft.Engine.SCALE_FACTOR),
+            _DEFAULT_SCALE_FACTOR,
+            places=9,
+        )
+
+    def test_string_value_uses_default_scale_factor(self):
+        """A string entry should default SCALE_FACTOR to 1.0."""
+        builder = PhasedEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        self.assertAlmostEqual(
+            builder._phase_engines['climb'].get_val(Aircraft.Engine.SCALE_FACTOR),
+            _DEFAULT_SCALE_FACTOR,
+            places=9,
         )
 
     def test_default_builder_name(self):

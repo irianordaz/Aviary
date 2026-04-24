@@ -37,7 +37,9 @@ from multi_fuel.phased_engine_builder import (
 phase_info = deepcopy(phase_info)
 inputs = deepcopy(lsa2_inputs)
 
-inputs.set_val(Aircraft.Engine.DATA_FILE, get_path('multi_fuel/engines/turbofan_22k.csv'))
+inputs.set_val(
+    Aircraft.Engine.DATA_FILE, get_path('multi_fuel/engines/turbofan_22k.csv')
+)
 inputs.set_val(Aircraft.Engine.MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_MASS, 6293.8, 'lbm')
 inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
@@ -46,9 +48,9 @@ inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
 engine = PhasedEngineTableBuilder(
     phase_engine_map={
-        'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.7),
-        'cruise': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
-        'descent': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
+        'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
+        'cruise': ('multi_fuel/engines/turbofan_22k.csv', 6.4, 1.0),
+        'descent': ('multi_fuel/engines/turbofan_22k.csv', 6.4),
     },
 )
 
