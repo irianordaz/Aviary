@@ -28,6 +28,9 @@ from multi_fuel.table_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
+    configure_phase_info,
+    install_propulsion,
+    wire_trajectory,
 )
 
 _PHASE_ENGINE_MAP = {
@@ -56,7 +59,7 @@ def _build_problem(phase_engine_map):
     phases = deepcopy(phase_info)
 
     engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
-    phases = engine.configure_phase_info(phases)
+    phases = configure_phase_info(phases, phase_engine_map)
 
     prob = AviaryProblem(verbosity=0)
     prob.load_inputs(inputs, phases)
@@ -64,9 +67,9 @@ def _build_problem(phase_engine_map):
     prob.check_and_preprocess_inputs()
     # Swap the default CorePropulsionBuilder for a phase-aware one so each
     # phase's ODE is built around that phase's engine.
-    engine.install_propulsion(prob.model)
+    install_propulsion(prob.model, phase_engine_map)
     prob.build_model()
-    engine.wire_trajectory(prob.model)
+    wire_trajectory(prob.model, phase_engine_map, engine.name)
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
     prob.add_design_variables()
     prob.add_objective()

@@ -32,6 +32,9 @@ from multi_fuel.table_builder import (
     TOTAL_MULTI_FUEL_MASS,
     TOTAL_MULTI_FUEL_VOLUME,
     MultiEngineTableBuilder,
+    configure_phase_info,
+    install_propulsion,
+    wire_trajectory,
 )
 
 phase_info = deepcopy(phase_info)
@@ -46,20 +49,20 @@ inputs.set_val(Aircraft.Engine.REFERENCE_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALED_SLS_THRUST, 22200.5, 'lbf')
 inputs.set_val(Aircraft.Engine.SCALE_FACTOR, 1.0)
 
-engine = MultiEngineTableBuilder(
-    phase_engine_map={
-        'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.7),
-        'cruise': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
-        'descent': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
-    },
-)
+phase_engine_map = {
+    'climb': ('multi_fuel/engines/turbofan_22k.csv', 6.7),
+    'cruise': ('multi_fuel/engines/turbofan_24k_1.csv', 6.4),
+    'descent': ('multi_fuel/engines/turbofan_28k.csv', 6.4),
+}
+
+engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
 
 if __name__ == '__main__':
     prob = AviaryProblem()
 
-    # Tag each phase so MultiEngineTableBuilder.build_mission can dispatch to
-    # the CSV/density configured for that phase in phase_engine_map.
-    phase_info = engine.configure_phase_info(phase_info)
+    # Tag each phase so MultiPhasePropulsionBuilder.build_mission can dispatch
+    # to the CSV/density configured for that phase in phase_engine_map.
+    phase_info = configure_phase_info(phase_info, phase_engine_map)
 
     prob.load_inputs(inputs, phase_info)
 
@@ -74,14 +77,14 @@ if __name__ == '__main__':
     # default CorePropulsionBuilder; swap it for a phase-aware one so each
     # phase's ODE builds a PropulsionMission around the engine configured for
     # that phase. Must happen before build_model() materializes the ODEs.
-    engine.install_propulsion(prob.model)
+    install_propulsion(prob.model, phase_engine_map)
 
     prob.build_model()
 
     # build_model() adds the post-mission fuel burn component under
     # post_mission.<engine.name>; connect phase mass timeseries to its inputs
     # before setup().
-    engine.wire_trajectory(prob.model)
+    wire_trajectory(prob.model, phase_engine_map, engine.name)
 
     prob.add_driver('IPOPT', max_iter=50, use_coloring=True)
 

@@ -29,9 +29,20 @@ MultiEngineTableBuilder
     SubsystemBuilder-based engine builder that holds a mapping of mission phases
     to engine decks (with optional per-phase fuel densities). It is registered
     as an external subsystem; its ``build_post_mission`` adds the
-    ``MultiEngineFuelBurnComp`` to the post-mission group, and its
-    ``wire_trajectory`` helper connects phase mass timeseries to that component
-    after ``AviaryProblem.build_model()``.
+    ``MultiEngineFuelBurnComp`` to the post-mission group.
+
+Module-level helpers
+--------------------
+configure_phase_info
+    Inject per-phase ``csv_path`` and ``fuel_density`` into ``phase_info``'s
+    ``subsystem_options`` so ``MultiPhasePropulsionBuilder`` can build the
+    per-phase engine on the fly.
+install_propulsion
+    Swap Aviary's default ``CorePropulsionBuilder`` for a
+    ``MultiPhasePropulsionBuilder`` after ``check_and_preprocess_inputs()``.
+wire_trajectory
+    Connect phase mass timeseries to the ``MultiEngineFuelBurnComp`` after
+    ``build_model()``.
 
 Variable names
 --------------
@@ -42,23 +53,28 @@ TOTAL_MULTI_FUEL_MASS, TOTAL_MULTI_FUEL_VOLUME
 
 Usage
 -----
-    from copy import deepcopy
-    from multi_fuel.table_builder import MultiEngineTableBuilder
-
-    engine = MultiEngineTableBuilder(
-        phase_engine_map={
-            'climb':   ('models/engines/turbofan_28k.csv', 6.7),
-            'cruise':  ('models/engines/turbofan_22k.csv', 6.4),
-            'descent': ('models/engines/turbofan_22k.csv', 6.4),
-        },
+    from multi_fuel.table_builder import (
+        MultiEngineTableBuilder,
+        configure_phase_info,
+        install_propulsion,
+        wire_trajectory,
     )
+
+    phase_engine_map = {
+        'climb':   ('models/engines/turbofan_28k.csv', 6.7),
+        'cruise':  ('models/engines/turbofan_22k.csv', 6.4),
+        'descent': ('models/engines/turbofan_22k.csv', 6.4),
+    }
+    engine = MultiEngineTableBuilder(phase_engine_map=phase_engine_map)
+    phase_info = configure_phase_info(phase_info, phase_engine_map)
 
     prob = AviaryProblem()
     prob.load_inputs(inputs, phase_info)
     prob.load_external_subsystems([engine])
     prob.check_and_preprocess_inputs()
+    install_propulsion(prob.model, phase_engine_map)
     prob.build_model()
-    engine.wire_trajectory(prob.model)
+    wire_trajectory(prob.model, phase_engine_map, engine.name)
     prob.setup()
     prob.run_aviary_problem()
 """
@@ -258,20 +274,17 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
 
 
 class MultiEngineTableBuilder(SubsystemBuilder):
-    """SubsystemBuilder that wires multi-fuel engine decks per mission phase.
+    """SubsystemBuilder that contributes the post-mission fuel-burn component.
 
-    Holds a mapping of mission phases to engine deck CSV files and optional
-    per-phase fuel densities, and provides three integration hooks:
+    Holds a mapping of mission phases to engine deck CSV files and per-phase
+    fuel densities. Registered as an external subsystem so its
+    ``build_post_mission`` adds the ``MultiEngineFuelBurnComp`` to the
+    post-mission group.
 
-    - ``configure_phase_info``: tags each phase's ``subsystem_options`` with
-      its ``phase_name`` under the propulsion subsystem's key, so the
-      per-phase engine selector knows which engine to use.
-    - ``install_propulsion``: swaps Aviary's default ``CorePropulsionBuilder``
-      with a ``MultiPhasePropulsionBuilder`` that selects the per-phase engine
-      when each phase's ODE is built.
-    - ``build_post_mission``: contributes a component that aggregates fuel
-      burn (mass and volume) per unique ``(csv, density)`` pair from the
-      phase mass timeseries, after the trajectory has been wired.
+    The trajectory wiring (``wire_trajectory``), phase_info configuration
+    (``configure_phase_info``), and propulsion swap (``install_propulsion``)
+    live as module-level helpers; they take ``phase_engine_map`` directly so
+    callers don't have to thread the builder instance through them.
 
     Parameters
     ----------
@@ -303,90 +316,6 @@ class MultiEngineTableBuilder(SubsystemBuilder):
                 csv_path, density_lbm_per_gal = phase_entry
             self.phase_engine_map[phase] = (csv_path, density_lbm_per_gal)
 
-    def configure_phase_info(
-        self, phase_info: dict, propulsion_name: str = 'propulsion'
-    ) -> dict:
-        """Inject per-phase engine config into ``subsystem_options[propulsion_name]``.
-
-        Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']
-        [propulsion_name]`` to the propulsion builder's ``build_mission`` as
-        ``subsystem_options``. ``MultiPhasePropulsionBuilder`` reads
-        ``csv_path`` and ``fuel_density`` from there to construct the per-phase
-        engine on the fly.
-
-        Parameters
-        ----------
-        phase_info : dict
-            The phase_info dictionary to configure. ``pre_mission`` and
-            ``post_mission`` keys are skipped.
-        propulsion_name : str
-            Name of the propulsion subsystem in Aviary (default
-            ``'propulsion'``). Must match the ``name`` of the
-            ``MultiPhasePropulsionBuilder`` installed in
-            ``install_propulsion``.
-
-        Returns
-        -------
-        dict
-            The same ``phase_info`` dict, with ``phase_name``, ``csv_path``,
-            and ``fuel_density`` set at
-            ``phase_info[phase]['subsystem_options'][propulsion_name]``.
-        """
-        skip = {'pre_mission', 'post_mission'}
-        for phase_name, phase_opts in phase_info.items():
-            if phase_name in skip:
-                continue
-            opts = phase_opts.setdefault('subsystem_options', {}).setdefault(
-                propulsion_name, {}
-            )
-            opts['phase_name'] = phase_name
-            if phase_name in self.phase_engine_map:
-                csv_path, density = self.phase_engine_map[phase_name]
-                opts['csv_path'] = csv_path
-                opts['fuel_density'] = density
-        return phase_info
-
-    def install_propulsion(self, aviary_group, propulsion_name: str = 'propulsion'):
-        """Swap Aviary's ``CorePropulsionBuilder`` for a phase-aware one.
-
-        Must be called after ``check_and_preprocess_inputs()`` (which adds
-        ``CorePropulsionBuilder`` to ``aviary_group.subsystems``) and before
-        ``build_model()`` (which materializes phase ODEs from those
-        subsystems). The swap preserves the existing builder name so that
-        ``configure_phase_info`` continues to address the right
-        ``subsystem_options`` key.
-
-        Parameters
-        ----------
-        aviary_group : AviaryGroup
-            Typically ``prob.model``. Its ``subsystems`` list is mutated in
-            place; the first builder named ``propulsion_name`` is replaced.
-        propulsion_name : str
-            Name of the propulsion subsystem to replace.
-        """
-        if not self.phase_engine_map:
-            raise ValueError(f'{self.name}: phase_engine_map is empty.')
-        first_csv, first_density = next(iter(self.phase_engine_map.values()))
-        default_options = AviaryValues()
-        default_options.set_val(Aircraft.Fuel.DENSITY, first_density, 'lbm/galUS')
-        default_engine = EngineTableBuilder(
-            name=f'{self.name}_default',
-            csv_path=first_csv,
-            options=default_options,
-        )
-        for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
-            if getattr(subsystem, 'name', None) == propulsion_name:
-                aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
-                    name=propulsion_name,
-                    default_engine=default_engine,
-                )
-                return
-        raise RuntimeError(
-            f'{self.name}: could not find a subsystem named '
-            f'{propulsion_name!r} to replace; call after '
-            'check_and_preprocess_inputs().'
-        )
-
     def build_post_mission(
         self,
         aviary_inputs=None,
@@ -404,28 +333,138 @@ class MultiEngineTableBuilder(SubsystemBuilder):
             return None
         return MultiEngineFuelBurnComp(phase_engine_map=self.phase_engine_map)
 
-    def wire_trajectory(self, aviary_group):
-        """Connect phase mass timeseries to the post-mission fuel burn component.
 
-        Must be called after ``AviaryProblem.build_model()`` (so the trajectory
-        and post-mission group exist) and before ``setup()``. Only phases that
-        appear in both ``phase_engine_map`` and
-        ``aviary_group.regular_phases`` are connected.
+def configure_phase_info(
+    phase_info: dict,
+    phase_engine_map: dict,
+    propulsion_name: str = 'propulsion',
+) -> dict:
+    """Inject per-phase engine config into ``subsystem_options[propulsion_name]``.
 
-        Input paths are resolved at the AviaryGroup level since the
-        ``post_mission`` group promotes its inputs with ``*``.
-        """
-        regular_phases = set(aviary_group.regular_phases)
-        for phase in self.phase_engine_map:
-            if phase not in regular_phases:
-                continue
-            aviary_group.connect(
-                f'traj.{phase}.timeseries.mass',
-                f'{self.name}.mass_start_{phase}',
-                src_indices=[0],
+    Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']
+    [propulsion_name]`` to the propulsion builder's ``build_mission`` as
+    ``subsystem_options``. ``MultiPhasePropulsionBuilder`` reads ``csv_path``
+    and ``fuel_density`` from there to construct the per-phase engine on the
+    fly.
+
+    Parameters
+    ----------
+    phase_info : dict
+        The phase_info dictionary to configure. ``pre_mission`` and
+        ``post_mission`` keys are skipped.
+    phase_engine_map : dict
+        Mapping ``{phase_name: (csv_path, density)}``.
+    propulsion_name : str
+        Name of the propulsion subsystem in Aviary (default ``'propulsion'``).
+        Must match the ``name`` of the ``MultiPhasePropulsionBuilder``
+        installed in ``install_propulsion``.
+
+    Returns
+    -------
+    dict
+        The same ``phase_info`` dict, with ``phase_name``, ``csv_path``, and
+        ``fuel_density`` set at
+        ``phase_info[phase]['subsystem_options'][propulsion_name]``.
+    """
+    skip = {'pre_mission', 'post_mission'}
+    for phase_name, phase_opts in phase_info.items():
+        if phase_name in skip:
+            continue
+        opts = phase_opts.setdefault('subsystem_options', {}).setdefault(
+            propulsion_name, {}
+        )
+        opts['phase_name'] = phase_name
+        if phase_name in phase_engine_map:
+            csv_path, density = phase_engine_map[phase_name]
+            opts['csv_path'] = csv_path
+            opts['fuel_density'] = density
+    return phase_info
+
+
+def install_propulsion(
+    aviary_group,
+    phase_engine_map: dict,
+    propulsion_name: str = 'propulsion',
+):
+    """Swap Aviary's ``CorePropulsionBuilder`` for a phase-aware one.
+
+    Must be called after ``check_and_preprocess_inputs()`` (which adds
+    ``CorePropulsionBuilder`` to ``aviary_group.subsystems``) and before
+    ``build_model()`` (which materializes phase ODEs from those subsystems).
+
+    Parameters
+    ----------
+    aviary_group : AviaryGroup
+        Typically ``prob.model``. Its ``subsystems`` list is mutated in place;
+        the first builder named ``propulsion_name`` is replaced.
+    phase_engine_map : dict
+        Mapping ``{phase_name: (csv_path, density)}``. The first entry's
+        ``(csv_path, density)`` is used to build the default engine that
+        ``MultiPhasePropulsionBuilder`` falls back to when a phase is missing
+        engine config in its subsystem_options.
+    propulsion_name : str
+        Name of the propulsion subsystem to replace.
+    """
+    if not phase_engine_map:
+        raise ValueError('phase_engine_map is empty.')
+    first_csv, first_density = next(iter(phase_engine_map.values()))
+    default_options = AviaryValues()
+    default_options.set_val(Aircraft.Fuel.DENSITY, first_density, 'lbm/galUS')
+    default_engine = EngineTableBuilder(
+        name='default_engine',
+        csv_path=first_csv,
+        options=default_options,
+    )
+    for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
+        if getattr(subsystem, 'name', None) == propulsion_name:
+            aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
+                name=propulsion_name,
+                default_engine=default_engine,
             )
-            aviary_group.connect(
-                f'traj.{phase}.timeseries.mass',
-                f'{self.name}.mass_end_{phase}',
-                src_indices=[-1],
-            )
+            return
+    raise RuntimeError(
+        f'could not find a subsystem named {propulsion_name!r} to replace; '
+        'call after check_and_preprocess_inputs().'
+    )
+
+
+def wire_trajectory(
+    aviary_group,
+    phase_engine_map: dict,
+    subsystem_name: str = 'multi_engine_table',
+):
+    """Connect phase mass timeseries to the post-mission fuel burn component.
+
+    Must be called after ``AviaryProblem.build_model()`` (so the trajectory
+    and post-mission group exist) and before ``setup()``. Only phases that
+    appear in both ``phase_engine_map`` and ``aviary_group.regular_phases``
+    are connected.
+
+    Input paths are resolved at the AviaryGroup level since the
+    ``post_mission`` group promotes its inputs with ``*``.
+
+    Parameters
+    ----------
+    aviary_group : AviaryGroup
+        Typically ``prob.model``.
+    phase_engine_map : dict
+        Mapping ``{phase_name: (csv_path, density)}``; only the keys are used.
+    subsystem_name : str
+        Name of the ``MultiEngineTableBuilder`` whose
+        ``MultiEngineFuelBurnComp`` lives at ``post_mission.<subsystem_name>``.
+        Must match the ``name`` of the registered builder.
+    """
+    regular_phases = set(aviary_group.regular_phases)
+    for phase in phase_engine_map:
+        if phase not in regular_phases:
+            continue
+        aviary_group.connect(
+            f'traj.{phase}.timeseries.mass',
+            f'{subsystem_name}.mass_start_{phase}',
+            src_indices=[0],
+        )
+        aviary_group.connect(
+            f'traj.{phase}.timeseries.mass',
+            f'{subsystem_name}.mass_end_{phase}',
+            src_indices=[-1],
+        )

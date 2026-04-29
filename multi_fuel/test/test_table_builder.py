@@ -26,6 +26,8 @@ from multi_fuel.table_builder import (
     MultiEngineFuelBurnComp,
     MultiEngineTableBuilder,
     MultiPhasePropulsionBuilder,
+    configure_phase_info,
+    install_propulsion,
 )
 
 _CSV_28K = 'multi_fuel/engines/turbofan_28k.csv'
@@ -219,16 +221,14 @@ class TestConfigurePhaseInfo(unittest.TestCase):
     """Verify ``configure_phase_info`` injects per-phase engine config under propulsion."""
 
     def test_injects_engine_config_into_propulsion_subsystem_options(self):
-        builder = MultiEngineTableBuilder(
-            phase_engine_map={'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)},
-        )
+        phase_engine_map = {'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)}
         phase_info = {
             'climb': {},
             'cruise': {'subsystem_options': {'other': {'k': 1}}},
             'pre_mission': {},
             'post_mission': {},
         }
-        configured = builder.configure_phase_info(deepcopy(phase_info))
+        configured = configure_phase_info(deepcopy(phase_info), phase_engine_map)
 
         climb_opts = configured['climb']['subsystem_options']['propulsion']
         self.assertEqual(climb_opts['phase_name'], 'climb')
@@ -246,12 +246,10 @@ class TestConfigurePhaseInfo(unittest.TestCase):
         )
 
     def test_custom_propulsion_name(self):
-        builder = MultiEngineTableBuilder(
-            phase_engine_map={'climb': (_CSV_28K, 6.7)},
-        )
+        phase_engine_map = {'climb': (_CSV_28K, 6.7)}
         phase_info = {'climb': {}}
-        configured = builder.configure_phase_info(
-            deepcopy(phase_info), propulsion_name='custom_prop'
+        configured = configure_phase_info(
+            deepcopy(phase_info), phase_engine_map, propulsion_name='custom_prop'
         )
         opts = configured['climb']['subsystem_options']['custom_prop']
         self.assertEqual(opts['phase_name'], 'climb')
@@ -259,9 +257,9 @@ class TestConfigurePhaseInfo(unittest.TestCase):
         self.assertAlmostEqual(opts['fuel_density'], 6.7, places=9)
 
     def test_skips_pre_and_post_mission(self):
-        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        phase_engine_map = {'climb': (_CSV_28K, 6.7)}
         phase_info = {'climb': {}, 'pre_mission': {}, 'post_mission': {}}
-        configured = builder.configure_phase_info(deepcopy(phase_info))
+        configured = configure_phase_info(deepcopy(phase_info), phase_engine_map)
 
         self.assertNotIn('subsystem_options', configured['pre_mission'])
         self.assertNotIn('subsystem_options', configured['post_mission'])
@@ -368,9 +366,7 @@ class TestInstallPropulsion(unittest.TestCase):
     """Verify ``install_propulsion`` swaps ``CorePropulsionBuilder`` in place."""
 
     def test_replaces_default_propulsion_builder(self):
-        builder = MultiEngineTableBuilder(
-            phase_engine_map={'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)},
-        )
+        phase_engine_map = {'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)}
         original_options = AviaryValues()
         original_options.set_val(Aircraft.Fuel.DENSITY, 6.7, 'lbm/galUS')
         original_engine = EngineTableBuilder(
@@ -383,7 +379,7 @@ class TestInstallPropulsion(unittest.TestCase):
             [original_propulsion, object(), object()]
         )
 
-        builder.install_propulsion(aviary_group)
+        install_propulsion(aviary_group, phase_engine_map)
 
         self.assertIsInstance(
             aviary_group.subsystems[0], MultiPhasePropulsionBuilder
@@ -403,11 +399,11 @@ class TestInstallPropulsion(unittest.TestCase):
         )
 
     def test_raises_when_no_propulsion_subsystem(self):
-        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        phase_engine_map = {'climb': (_CSV_28K, _DEFAULT_FUEL_DENSITY_LBM_GAL)}
         aviary_group = _StubAviaryGroup([object(), object()])
 
         with self.assertRaises(RuntimeError):
-            builder.install_propulsion(aviary_group)
+            install_propulsion(aviary_group, phase_engine_map)
 
 
 class TestBuildPostMission(unittest.TestCase):
