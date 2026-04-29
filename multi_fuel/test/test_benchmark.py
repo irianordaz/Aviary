@@ -86,21 +86,19 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
         """After ``build_model``, each phase's ODE must contain the per-phase engine.
 
         ``MultiPhasePropulsionBuilder`` (installed via
-        ``engine.install_propulsion``) builds a per-phase ``PropulsionMission``
-        using the engine registered for that phase. The mission group adds each
-        engine as a subgroup under the engine's own name, giving the path
-        ``traj.phases.{phase}.rhs_all.solver_sub.propulsion.{engine_name}``.
-        The builder's per-phase engine is identified by the CSV it resolves
-        ``Aircraft.Engine.DATA_FILE`` to; we cross-check that each phase's
-        engine has the expected CSV.
+        ``engine.install_propulsion``) builds a fresh engine per phase from
+        ``subsystem_options['csv_path']`` / ``['fuel_density']``, naming it
+        ``f'{propulsion_name}_{phase}'``. The mission group adds each engine
+        as a subgroup under that name, giving the path
+        ``traj.phases.{phase}.rhs_all.solver_sub.propulsion.propulsion_{phase}``.
         """
-        prob, engine = _build_problem(_PHASE_ENGINE_MAP)
+        prob, _ = _build_problem(_PHASE_ENGINE_MAP)
 
         for phase, (csv, _) in _PHASE_ENGINE_MAP.items():
-            phase_engine = engine._phase_engines[phase]
+            engine_name = f'propulsion_{phase}'
             path = (
                 f'traj.phases.{phase}.rhs_all.solver_sub.propulsion.'
-                f'{phase_engine.name}'
+                f'{engine_name}'
             )
             subsys = prob.model._get_subsystem(path)
             self.assertIsNotNone(
@@ -114,14 +112,6 @@ class MultiFuelBenchmarkTest(unittest.TestCase):
                 subsys._get_subsystem('interpolation'),
                 f'Phase {phase!r} engine should contain an interpolation component '
                 f'built from CSV {csv}',
-            )
-
-            # The builder holds the engine that was dispatched for this phase;
-            # its DATA_FILE must match the CSV requested in phase_engine_map.
-            self.assertEqual(
-                str(phase_engine.get_val(Aircraft.Engine.DATA_FILE)),
-                str(get_path(csv)),
-                f'Phase {phase!r} engine should use CSV {csv}',
             )
 
     @require_pyoptsparse(optimizer='IPOPT')

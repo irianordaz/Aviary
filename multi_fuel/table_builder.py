@@ -202,14 +202,14 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
 
     Aviary's ``CorePropulsionBuilder`` always builds its ``PropulsionMission``
     from a single, fixed list of ``engine_models`` and uses that same engine in
-    every phase. This subclass overrides ``build_mission`` to instead pick the
-    engine model registered for the current phase (via ``phase_engines``) and
-    build a ``PropulsionMission`` around that engine. The phase identity is
-    read from ``subsystem_options['phase_name']`` (populated upstream by
-    ``MultiEngineTableBuilder.configure_phase_info``).
+    every phase. This subclass overrides ``build_mission`` to instead build a
+    fresh engine from ``subsystem_options['csv_path']`` and
+    ``subsystem_options['fuel_density']`` (populated upstream by
+    ``MultiEngineTableBuilder.configure_phase_info``) and wraps it in a
+    ``PropulsionMission`` for that phase.
 
-    Falling back to ``default_engine`` for unknown phases keeps callers from
-    accidentally breaking when a phase is not in ``phase_engines`` (e.g., a
+    Falling back to ``default_engine`` when ``csv_path`` is absent keeps
+    callers from accidentally breaking when a phase is not configured (e.g., a
     reserve phase added later).
 
     Parameters
@@ -217,31 +217,37 @@ class MultiPhasePropulsionBuilder(CorePropulsionBuilder):
     name : str
         Builder name. Must remain ``'propulsion'`` so it slots into
         ``AviaryGroup.subsystems[0]`` correctly.
-    phase_engines : dict, optional
-        Mapping ``{phase_name: EngineModel}`` — the engine to use in each
-        phase's ``PropulsionMission``.
     default_engine : EngineModel
-        Engine used when ``subsystem_options['phase_name']`` is missing or
-        unrecognized; also used by ``build_pre_mission`` (which is called once
-        and is not phase-aware).
+        Engine used when ``subsystem_options`` lacks ``csv_path``; also used by
+        ``build_pre_mission`` (which is called once and is not phase-aware).
     """
 
     def __init__(
         self,
         name: str = 'propulsion',
         meta_data=None,
-        phase_engines: dict = None,
         default_engine=None,
     ):
         super().__init__(
             name=name, meta_data=meta_data, engine_models=[default_engine]
         )
-        self._phase_engines = phase_engines or {}
         self._default_engine = default_engine
 
     def build_mission(self, num_nodes, aviary_inputs, user_options, subsystem_options):
-        phase_name = (subsystem_options or {}).get('phase_name')
-        engine = self._phase_engines.get(phase_name, self._default_engine)
+        opts = subsystem_options or {}
+        csv_path = opts.get('csv_path')
+        if csv_path is not None:
+            engine_options = AviaryValues()
+            engine_options.set_val(
+                Aircraft.Fuel.DENSITY, opts['fuel_density'], 'lbm/galUS'
+            )
+            engine = EngineTableBuilder(
+                name=f'{self.name}_{opts.get("phase_name", "phase")}',
+                csv_path=csv_path,
+                options=engine_options,
+            )
+        else:
+            engine = self._default_engine
         return PropulsionMission(
             num_nodes=num_nodes,
             aviary_options=aviary_inputs,
@@ -297,26 +303,16 @@ class MultiEngineTableBuilder(SubsystemBuilder):
                 csv_path, density_lbm_per_gal = phase_entry
             self.phase_engine_map[phase] = (csv_path, density_lbm_per_gal)
 
-        self._phase_engines = {}
-        for phase, (csv_path, density_lbm_per_gal) in self.phase_engine_map.items():
-            engine_options = AviaryValues()
-            engine_options.set_val(
-                Aircraft.Fuel.DENSITY, density_lbm_per_gal, 'lbm/galUS'
-            )
-            self._phase_engines[phase] = EngineTableBuilder(
-                name=f'{name}_{phase}', csv_path=csv_path, options=engine_options
-            )
-
     def configure_phase_info(
         self, phase_info: dict, propulsion_name: str = 'propulsion'
     ) -> dict:
-        """Tag each phase's subsystem_options with its name under ``propulsion``.
+        """Inject per-phase engine config into ``subsystem_options[propulsion_name]``.
 
         Aviary's mission ODE passes ``phase_info[phase]['subsystem_options']
         [propulsion_name]`` to the propulsion builder's ``build_mission`` as
         ``subsystem_options``. ``MultiPhasePropulsionBuilder`` reads
-        ``subsystem_options['phase_name']`` to pick the engine for that phase,
-        so we set that key here.
+        ``csv_path`` and ``fuel_density`` from there to construct the per-phase
+        engine on the fly.
 
         Parameters
         ----------
@@ -332,16 +328,22 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         Returns
         -------
         dict
-            The same ``phase_info`` dict, with ``phase_name`` set at
-            ``phase_info[phase]['subsystem_options'][propulsion_name]['phase_name']``.
+            The same ``phase_info`` dict, with ``phase_name``, ``csv_path``,
+            and ``fuel_density`` set at
+            ``phase_info[phase]['subsystem_options'][propulsion_name]``.
         """
         skip = {'pre_mission', 'post_mission'}
         for phase_name, phase_opts in phase_info.items():
             if phase_name in skip:
                 continue
-            phase_opts.setdefault('subsystem_options', {}).setdefault(
+            opts = phase_opts.setdefault('subsystem_options', {}).setdefault(
                 propulsion_name, {}
-            )['phase_name'] = phase_name
+            )
+            opts['phase_name'] = phase_name
+            if phase_name in self.phase_engine_map:
+                csv_path, density = self.phase_engine_map[phase_name]
+                opts['csv_path'] = csv_path
+                opts['fuel_density'] = density
         return phase_info
 
     def install_propulsion(self, aviary_group, propulsion_name: str = 'propulsion'):
@@ -362,14 +364,20 @@ class MultiEngineTableBuilder(SubsystemBuilder):
         propulsion_name : str
             Name of the propulsion subsystem to replace.
         """
-        if not self._phase_engines:
+        if not self.phase_engine_map:
             raise ValueError(f'{self.name}: phase_engine_map is empty.')
-        default_engine = next(iter(self._phase_engines.values()))
+        first_csv, first_density = next(iter(self.phase_engine_map.values()))
+        default_options = AviaryValues()
+        default_options.set_val(Aircraft.Fuel.DENSITY, first_density, 'lbm/galUS')
+        default_engine = EngineTableBuilder(
+            name=f'{self.name}_default',
+            csv_path=first_csv,
+            options=default_options,
+        )
         for subsystem_index, subsystem in enumerate(aviary_group.subsystems):
             if getattr(subsystem, 'name', None) == propulsion_name:
                 aviary_group.subsystems[subsystem_index] = MultiPhasePropulsionBuilder(
                     name=propulsion_name,
-                    phase_engines=self._phase_engines,
                     default_engine=default_engine,
                 )
                 return

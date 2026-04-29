@@ -15,6 +15,7 @@ import openmdao.api as om
 from openmdao.utils.assert_utils import assert_near_equal
 
 from aviary.subsystems.propulsion.propulsion_builder import CorePropulsionBuilder
+from aviary.utils.aviary_values import AviaryValues
 from aviary.utils.functions import get_path
 from aviary.variable_info.variables import Aircraft
 from multi_fuel.table_builder import (
@@ -163,7 +164,7 @@ class TestEngineTableBuilder(unittest.TestCase):
 
 
 class TestMultiEngineTableBuilder(unittest.TestCase):
-    """Verify per-phase engines are created with the correct CSV and density."""
+    """Verify per-phase engine config is stored correctly in phase_engine_map."""
 
     def _make_builder(self):
         return MultiEngineTableBuilder(
@@ -174,8 +175,7 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
             },
         )
 
-    def test_each_phase_engine_uses_the_requested_csv(self):
-        """Each per-phase engine must resolve DATA_FILE to the mapped CSV."""
+    def test_each_phase_records_the_requested_csv(self):
         builder = self._make_builder()
         expected = {
             'climb': _CSV_28K,
@@ -183,46 +183,29 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
             'descent': _CSV_24K,
         }
         for phase, csv in expected.items():
-            engine = builder._phase_engines[phase]
             self.assertEqual(
-                str(engine.get_val(Aircraft.Engine.DATA_FILE)),
-                str(get_path(csv)),
-                f'phase {phase!r} should use engine CSV {csv}',
+                builder.phase_engine_map[phase][0],
+                csv,
+                f'phase {phase!r} should record CSV {csv}',
             )
 
-    def test_each_phase_engine_uses_the_requested_density(self):
-        """Each per-phase engine must carry the requested Aircraft.Fuel.DENSITY."""
+    def test_each_phase_records_the_requested_density(self):
         builder = self._make_builder()
         expected = {'climb': 6.7, 'cruise': 6.4, 'descent': 4.2}
         for phase, density in expected.items():
-            engine = builder._phase_engines[phase]
             self.assertAlmostEqual(
-                engine.get_val(Aircraft.Fuel.DENSITY, units='lbm/galUS'),
+                builder.phase_engine_map[phase][1],
                 density,
                 places=9,
-                msg=f'phase {phase!r} should have density {density}',
+                msg=f'phase {phase!r} should record density {density}',
             )
 
     def test_string_value_applies_default_density(self):
         builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
         self.assertAlmostEqual(
-            builder._phase_engines['climb'].get_val(
-                Aircraft.Fuel.DENSITY, units='lbm/galUS'
-            ),
+            builder.phase_engine_map['climb'][1],
             _DEFAULT_FUEL_DENSITY_LBM_GAL,
             places=9,
-        )
-
-    def test_per_phase_engine_names_are_distinct(self):
-        builder = self._make_builder()
-        engine_names = {engine.name for engine in builder._phase_engines.values()}
-        self.assertEqual(
-            engine_names,
-            {
-                'multi_engine_table_climb',
-                'multi_engine_table_cruise',
-                'multi_engine_table_descent',
-            },
         )
 
     def test_default_builder_name(self):
@@ -233,11 +216,11 @@ class TestMultiEngineTableBuilder(unittest.TestCase):
 
 
 class TestConfigurePhaseInfo(unittest.TestCase):
-    """Verify ``configure_phase_info`` tags each phase with its name under propulsion."""
+    """Verify ``configure_phase_info`` injects per-phase engine config under propulsion."""
 
-    def test_injects_phase_name_into_propulsion_subsystem_options(self):
+    def test_injects_engine_config_into_propulsion_subsystem_options(self):
         builder = MultiEngineTableBuilder(
-            phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
+            phase_engine_map={'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)},
         )
         phase_info = {
             'climb': {},
@@ -247,31 +230,33 @@ class TestConfigurePhaseInfo(unittest.TestCase):
         }
         configured = builder.configure_phase_info(deepcopy(phase_info))
 
-        self.assertEqual(
-            configured['climb']['subsystem_options']['propulsion']['phase_name'],
-            'climb',
-        )
-        self.assertEqual(
-            configured['cruise']['subsystem_options']['propulsion']['phase_name'],
-            'cruise',
-        )
+        climb_opts = configured['climb']['subsystem_options']['propulsion']
+        self.assertEqual(climb_opts['phase_name'], 'climb')
+        self.assertEqual(climb_opts['csv_path'], _CSV_28K)
+        self.assertAlmostEqual(climb_opts['fuel_density'], 6.7, places=9)
+
+        cruise_opts = configured['cruise']['subsystem_options']['propulsion']
+        self.assertEqual(cruise_opts['phase_name'], 'cruise')
+        self.assertEqual(cruise_opts['csv_path'], _CSV_22K)
+        self.assertAlmostEqual(cruise_opts['fuel_density'], 6.4, places=9)
+
         # Existing subsystem_options entries are preserved.
         self.assertEqual(
             configured['cruise']['subsystem_options']['other'], {'k': 1}
         )
 
     def test_custom_propulsion_name(self):
-        builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
+        builder = MultiEngineTableBuilder(
+            phase_engine_map={'climb': (_CSV_28K, 6.7)},
+        )
         phase_info = {'climb': {}}
         configured = builder.configure_phase_info(
             deepcopy(phase_info), propulsion_name='custom_prop'
         )
-        self.assertEqual(
-            configured['climb']['subsystem_options']['custom_prop'][
-                'phase_name'
-            ],
-            'climb',
-        )
+        opts = configured['climb']['subsystem_options']['custom_prop']
+        self.assertEqual(opts['phase_name'], 'climb')
+        self.assertEqual(opts['csv_path'], _CSV_28K)
+        self.assertAlmostEqual(opts['fuel_density'], 6.7, places=9)
 
     def test_skips_pre_and_post_mission(self):
         builder = MultiEngineTableBuilder(phase_engine_map={'climb': _CSV_28K})
@@ -290,50 +275,64 @@ class _StubAviaryGroup:
 
 
 class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
-    """Verify ``MultiPhasePropulsionBuilder.build_mission`` selects per phase.
+    """Verify ``MultiPhasePropulsionBuilder.build_mission`` builds per-phase engines.
 
-    The builder wraps a dict ``{phase_name: engine}``. On each
-    ``build_mission`` call, it should pick the engine whose key matches
-    ``subsystem_options['phase_name']`` and pass *only* that engine to the
-    ``PropulsionMission`` it constructs.
+    On each ``build_mission`` call, it should construct an ``EngineTableBuilder``
+    from ``subsystem_options['csv_path']`` and ``subsystem_options['fuel_density']``
+    and pass *only* that engine to the ``PropulsionMission`` it constructs.
     """
 
     def _make_propulsion_builder(self):
-        outer_builder = MultiEngineTableBuilder(
-            phase_engine_map={
-                'climb': (_CSV_28K, 6.7),
-                'cruise': (_CSV_22K, 6.4),
-                'descent': (_CSV_24K, 4.2),
-            },
+        default_options = AviaryValues()
+        default_options.set_val(Aircraft.Fuel.DENSITY, 6.7, 'lbm/galUS')
+        default_engine = EngineTableBuilder(
+            name='propulsion_default',
+            csv_path=_CSV_28K,
+            options=default_options,
         )
         propulsion_builder = MultiPhasePropulsionBuilder(
             name='propulsion',
-            phase_engines=outer_builder._phase_engines,
-            default_engine=next(iter(outer_builder._phase_engines.values())),
+            default_engine=default_engine,
         )
-        return propulsion_builder, outer_builder
+        return propulsion_builder, default_engine
 
-    def test_picks_engine_registered_for_phase(self):
-        propulsion_builder, outer_builder = self._make_propulsion_builder()
+    def test_builds_engine_from_subsystem_options(self):
+        propulsion_builder, _ = self._make_propulsion_builder()
+        phase_configs = {
+            'climb': (_CSV_28K, 6.7),
+            'cruise': (_CSV_22K, 6.4),
+            'descent': (_CSV_24K, 4.2),
+        }
         with mock.patch(
             'multi_fuel.table_builder.PropulsionMission'
         ) as mock_propulsion_mission:
-            for phase in ('climb', 'cruise', 'descent'):
+            for phase, (csv, density) in phase_configs.items():
+                mock_propulsion_mission.reset_mock()
                 propulsion_builder.build_mission(
                     num_nodes=3,
                     aviary_inputs=None,
                     user_options={},
-                    subsystem_options={'phase_name': phase},
+                    subsystem_options={
+                        'phase_name': phase,
+                        'csv_path': csv,
+                        'fuel_density': density,
+                    },
                 )
-                call_kwargs = mock_propulsion_mission.call_args.kwargs
+                engine = mock_propulsion_mission.call_args.kwargs['engine_models'][0]
                 self.assertEqual(
-                    call_kwargs['engine_models'],
-                    [outer_builder._phase_engines[phase]],
-                    f'phase {phase!r} should dispatch to its engine',
+                    str(engine.get_val(Aircraft.Engine.DATA_FILE)),
+                    str(get_path(csv)),
+                    f'phase {phase!r} should build engine from CSV {csv}',
+                )
+                self.assertAlmostEqual(
+                    engine.get_val(Aircraft.Fuel.DENSITY, units='lbm/galUS'),
+                    density,
+                    places=9,
+                    msg=f'phase {phase!r} should build engine with density {density}',
                 )
 
-    def test_unknown_phase_falls_back_to_default(self):
-        propulsion_builder, outer_builder = self._make_propulsion_builder()
+    def test_missing_csv_path_falls_back_to_default(self):
+        propulsion_builder, default_engine = self._make_propulsion_builder()
         with mock.patch(
             'multi_fuel.table_builder.PropulsionMission'
         ) as mock_propulsion_mission:
@@ -345,11 +344,11 @@ class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
             )
             self.assertEqual(
                 mock_propulsion_mission.call_args.kwargs['engine_models'],
-                [next(iter(outer_builder._phase_engines.values()))],
+                [default_engine],
             )
 
     def test_missing_subsystem_options_falls_back_to_default(self):
-        propulsion_builder, outer_builder = self._make_propulsion_builder()
+        propulsion_builder, default_engine = self._make_propulsion_builder()
         with mock.patch(
             'multi_fuel.table_builder.PropulsionMission'
         ) as mock_propulsion_mission:
@@ -361,7 +360,7 @@ class TestMultiPhasePropulsionBuilderDispatch(unittest.TestCase):
             )
             self.assertEqual(
                 mock_propulsion_mission.call_args.kwargs['engine_models'],
-                [next(iter(outer_builder._phase_engines.values()))],
+                [default_engine],
             )
 
 
@@ -370,10 +369,15 @@ class TestInstallPropulsion(unittest.TestCase):
 
     def test_replaces_default_propulsion_builder(self):
         builder = MultiEngineTableBuilder(
-            phase_engine_map={'climb': _CSV_28K, 'cruise': _CSV_22K},
+            phase_engine_map={'climb': (_CSV_28K, 6.7), 'cruise': (_CSV_22K, 6.4)},
+        )
+        original_options = AviaryValues()
+        original_options.set_val(Aircraft.Fuel.DENSITY, 6.7, 'lbm/galUS')
+        original_engine = EngineTableBuilder(
+            name='orig', csv_path=_CSV_28K, options=original_options
         )
         original_propulsion = CorePropulsionBuilder(
-            'propulsion', engine_models=[next(iter(builder._phase_engines.values()))]
+            'propulsion', engine_models=[original_engine]
         )
         aviary_group = _StubAviaryGroup(
             [original_propulsion, object(), object()]
@@ -385,9 +389,17 @@ class TestInstallPropulsion(unittest.TestCase):
             aviary_group.subsystems[0], MultiPhasePropulsionBuilder
         )
         self.assertEqual(aviary_group.subsystems[0].name, 'propulsion')
-        # The replacement carries the same per-phase engine mapping.
+        # The replacement's default_engine should be built from the first
+        # phase's CSV/density.
+        default_engine = aviary_group.subsystems[0]._default_engine
         self.assertEqual(
-            aviary_group.subsystems[0]._phase_engines, builder._phase_engines
+            str(default_engine.get_val(Aircraft.Engine.DATA_FILE)),
+            str(get_path(_CSV_28K)),
+        )
+        self.assertAlmostEqual(
+            default_engine.get_val(Aircraft.Fuel.DENSITY, units='lbm/galUS'),
+            6.7,
+            places=9,
         )
 
     def test_raises_when_no_propulsion_subsystem(self):
