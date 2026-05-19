@@ -1,0 +1,18 @@
+[workspace]
+authors = ["Irian Ordaz <irian.ordaz@gmail.com>"]
+channels = ["conda-forge"]
+name = "Aviary"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = ">=3.14.3,<3.15"
+openmdao = ">=3.43.0,<4"
+cyipopt = ">=1.7.0,<2"
+pyoptsparse = ">=2.15.0,<3"
+
+[pypi-dependencies]
+aviary = { path = ".", editable = true }
+hytank = { path = "./HyTank", editable = true }
