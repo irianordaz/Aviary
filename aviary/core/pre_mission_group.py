@@ -7,6 +7,9 @@ from aviary.variable_info.functions import override_aviary_vars
 class PreMissionGroup(om.Group):
     """OpenMDAO group that holds all pre-mission systems."""
 
+    def setup(self):
+        self.options['auto_order'] = True
+
     def configure(self):
         """
         Configure this group for pre-mission.

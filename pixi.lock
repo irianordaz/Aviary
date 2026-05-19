@@ -965,7 +965,6 @@ packages:
   - testflo ; extra == 'dev'
   - itables ; extra == 'docs'
   - jupyter-book<2 ; extra == 'docs'
-  requires_python: '>=3.10'
 - pypi: ./HyTank
   name: hytank
   requires_dist:
