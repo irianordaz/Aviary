@@ -16,3 +16,4 @@ pyoptsparse = ">=2.15.0,<3"
 [pypi-dependencies]
 aviary = { path = ".", editable = true }
 hytank = { path = "./HyTank", editable = true }
+coolprop = ">=7.2.0,<8"

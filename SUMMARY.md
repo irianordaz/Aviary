@@ -103,10 +103,116 @@ OpenMDAO `UnitsWarning` raised during connection.
 
 No other files inside `HyTank/` were modified.
 
+## 6. LNG (methane) support in HyTank, parallel to LH2
+
+Added liquefied methane as a second propellant option without
+disturbing the existing LH2 code path. Approach: parallel
+implementation (new data, new property class, new wrapper) with
+an OpenMDAO `propellant` option (`'LH2'` default, `'LNG'` opt-in)
+threaded through the physics components.
+
+### New files
+- `HyTank/hytank/CH4_property_data/__init__.py`
+- `HyTank/hytank/CH4_property_data/data_parser.py` — copy of the H2
+  parser; reads saturated and per-bar tab-separated property files
+  in this directory.
+- `HyTank/hytank/CH4_property_data/generate_from_coolprop.py` —
+  one-shot script that pulls methane property tables from
+  CoolProp and writes them in the NIST schema. Run via
+  `pixi run python HyTank/hytank/CH4_property_data/generate_from_coolprop.py`.
+- `HyTank/hytank/CH4_property_data/saturated_properties.txt` +
+  seven `<P>_bar_properties.txt` files (1, 2, 5, 10, 20, 30, 40 bar).
+- `HyTank/hytank/CH4_properties.py` — `MethaneProperties(HydrogenProperties)`.
+  Reuses the H2 surrogate code via subclassing; overrides
+  `_data_subdir`, `_get_sat_property`, `_get_property`, and
+  `MOLEC_WEIGHT`.
+- `HyTank/hytank/LNG_tank.py` — `LNGTank(LH2Tank)` and
+  `LNGTankThermals(LH2TankThermals)` convenience wrappers that
+  shift initial-condition defaults (ullage 118 K @ 1.5 bar, liquid
+  113 K) and set `propellant='LNG'`.
+- `HyTank/hytank/tests/test_CH4_properties.py`,
+  `HyTank/hytank/tests/test_LNG_tank.py` — sanity + build-and-run
+  tests (5 + 1 new tests, all passing).
+
+### Edited files
+- `pixi.toml` — added `coolprop>=7.2.0,<8` to `[pypi-dependencies]`.
+- `HyTank/hytank/utilities/constants.py` — added
+  `MOLEC_WEIGHT_CH4 = 16.043e-3`.
+- `HyTank/hytank/H2_properties.py`:
+  - Added `MOLEC_WEIGHT = MOLEC_WEIGHT_H2` class attribute.
+  - Refactored `__init__` to read data through the three new class
+    hooks `_data_subdir`, `_get_sat_property`, `_get_property` so
+    `MethaneProperties` can subclass cleanly without duplicating
+    the surrogate-training body.
+- `HyTank/hytank/H2_properties_MendezRamos.py` — exposed
+  `MOLEC_WEIGHT = MOLEC_WEIGHT_H2` at module scope so the
+  complex-step derivative tests (which swap `self.H2` for this
+  module) keep working after the constant migrated onto the
+  property class.
+- `HyTank/hytank/boil_off.py` (the biggest edit):
+  - Replaced the eager module-level `H2_prop = HydrogenProperties()`
+    with a lazy `get_propellant(name)` cache that returns either a
+    `HydrogenProperties` or `MethaneProperties` instance.
+  - Added a `propellant` OpenMDAO option (default `'LH2'`,
+    values `('LH2', 'LNG')`) on `BoilOff`, `FullODE`,
+    `LH2BoilOffODE`, and `InitialTankStateModification`.
+  - Replaced direct `H2_prop.*` calls with `self.H2.*` (lines
+    283, 298, 299, 460 in the original file).
+  - Replaced 19 occurrences of `MOLEC_WEIGHT_H2` with
+    `self.H2.MOLEC_WEIGHT` inside `LH2BoilOffODE.compute` /
+    `compute_partials`.
+  - Moved `self.H2 = ...` from `InitialTankStateModification.__init__`
+    into `setup` so it can read the (post-init) option.
+  - Made `T_gas` / `T_liq` output bounds in
+    `InitialTankStateModification.setup` propellant-aware
+    (LH2: [14, 33] / [18, 150] K; LNG: [88, 120] / [88, 200] K).
+    Without this, methane initial states (~110-118 K) get
+    immediately clamped to LH2 ranges and Newton diverges.
+- `HyTank/hytank/LH2_tank.py` — added `propellant` option to
+  `LH2Tank.initialize` and `LH2TankThermals.initialize` and
+  forwarded it to the child subsystems they construct.
+- `HyTank/hytank/__init__.py` — re-exported `LNGTank` and
+  `LNGTankThermals` alongside the existing LH2 classes.
+
+### Why the parallel approach works
+- `HydrogenProperties`'s public method names (`lh2_P`, `gh2_rho`,
+  `sat_gh2_T`, ...) live in the surrogate dictionaries as
+  name-bound keys, not as physics names. `MethaneProperties`
+  inherits those same methods but populates the dictionaries from
+  the methane data files. Every existing call site in `boil_off.py`
+  stays valid — only the data behind it changes.
+- Surrogate construction is expensive; the lazy `get_propellant`
+  cache shares a single `HydrogenProperties` (and a single
+  `MethaneProperties`) instance across every component that picks
+  the same propellant.
+- LH2 path is untouched: `propellant='LH2'` is the default, the
+  same `.pkl` caches are used, and the full LH2 test suite (43
+  tests across `test_boil_off`, `test_LH2_tank`, `test_heat_leak`,
+  `test_weight`) still passes.
+
+### Verification
+- LH2 tests (backward compat): 43/43 pass.
+- LNG tests (new): 6/6 pass.
+- End-to-end LNG smoke run (1 m × 4 m tank, 1 hr cruise, 0.05 kg/s
+  draw) burns exactly 180 kg of LNG (conservation check ✓),
+  pressure drops from 1.50 → 1.12 bar, fill drops 95% → 92.4%,
+  liquid T stable at 113 K.
+
 ## Files touched
 - `cryo_example.py`
 - `aviary/core/pre_mission_group.py`
+- `pixi.toml`
 - `HyTank/hytank/weight.py`
 - `HyTank/hytank/heat_leak.py`
 - `HyTank/hytank/LH2_tank.py`
+- `HyTank/hytank/__init__.py`
+- `HyTank/hytank/utilities/constants.py`
+- `HyTank/hytank/H2_properties.py`
+- `HyTank/hytank/H2_properties_MendezRamos.py`
+- `HyTank/hytank/boil_off.py`
+- `HyTank/hytank/CH4_properties.py` (new)
+- `HyTank/hytank/LNG_tank.py` (new)
+- `HyTank/hytank/CH4_property_data/` (new directory)
+- `HyTank/hytank/tests/test_CH4_properties.py` (new)
+- `HyTank/hytank/tests/test_LNG_tank.py` (new)
 - `SUMMARY.md` (this file)
