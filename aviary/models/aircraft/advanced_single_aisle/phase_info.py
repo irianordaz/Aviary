@@ -3,7 +3,7 @@ from aviary.variable_info.variables import Aircraft, Mission
 # defaults for energy-state based phases
 
 phase_info = {
-    'pre_mission': {'include_takeoff': True, 'optimize_mass': True},
+    'pre_mission': {'include_takeoff': False, 'optimize_mass': True},
     'climb': {
         'subsystem_options': {'aerodynamics': {'method': 'computed'}},
         'user_options': {
@@ -71,7 +71,7 @@ phase_info = {
         },
     },
     'post_mission': {
-        'include_landing': True,
+        'include_landing': False,
         'constrain_range': True,
         'target_range': (3380.0, 'nmi'),
     },

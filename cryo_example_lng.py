@@ -221,6 +221,7 @@ class _MissionFuelFlowAssembler(om.ExplicitComponent):
                 val=np.linspace(t0, t1, length),
                 units='s',
             )
+        self.add_input('flow_rate_scale', val=1.0, units='unitless')
         self.add_output(
             'm_dot_liq_out', val=np.zeros(nn), units='kg/s',
         )
@@ -249,13 +250,14 @@ class _MissionFuelFlowAssembler(om.ExplicitComponent):
         t_end = t_all[-1]
         outputs['mission_duration'] = t_end - t_start
 
+        scale = inputs['flow_rate_scale']
         if t_end > t_start:
             t_target = np.linspace(t_start, t_end, nn)
-            outputs['m_dot_liq_out'] = np.interp(
+            outputs['m_dot_liq_out'] = scale * np.interp(
                 t_target, t_all, ff_all,
             )
         else:
-            outputs['m_dot_liq_out'] = np.full(nn, ff_all.mean())
+            outputs['m_dot_liq_out'] = scale * np.full(nn, ff_all.mean())
 
 
 # ── Post-mission wrapper component ────────────────────────────
@@ -470,6 +472,12 @@ if __name__ == '__main__':
     prob.check_and_preprocess_inputs()
     prob.build_model()
 
+    # 4b. Let OpenMDAO auto-reorder the core pre-mission group from
+    # its data connections rather than declaration order. Set here
+    # (after build_model, before setup) so Aviary core stays
+    # unmodified.
+    prob.model.pre_mission.options['auto_order'] = True
+
     # 5. Add optimizer, design variables, and objective
     prob.add_driver('IPOPT')
     prob.add_design_variables()
@@ -508,6 +516,9 @@ if __name__ == '__main__':
         Aircraft.Fuel.LNGTank.MAX_OPERATING_PRESSURE,
         5.0, units='bar',
     )
+    # Scale the mission fuel-flow rate seen by HyTank.
+    # 1.0 = use mission values as-is; 2.0 = double the extraction rate.
+    prob.set_val('lng_tank.assembler.flow_rate_scale', 1.0)
 
     # 8. Run the Aviary problem
     prob.run_aviary_problem()
@@ -580,3 +591,4 @@ if __name__ == '__main__':
         f'start={fill[0] * 100:.1f}%, '
         f'end={fill[-1] * 100:.1f}%'
     )
+    print(Mission.BLOCK_FUEL, prob.get_val(Mission.BLOCK_FUEL))

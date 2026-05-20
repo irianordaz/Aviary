@@ -19,7 +19,7 @@ from aviary.utils.functions import get_aviary_resource_path
 from aviary.variable_info.functions import (
     add_aviary_output,
 )
-from aviary.variable_info.variables import Dynamic
+from aviary.variable_info.variables import Dynamic, Aircraft, Mission
 
 from aviary.models.aircraft.advanced_single_aisle.phase_info import (
     phase_info,
@@ -208,6 +208,7 @@ class _MissionFuelFlowAssembler(om.ExplicitComponent):
                 val=np.linspace(t0, t1, length),
                 units='s',
             )
+        self.add_input('flow_rate_scale', val=1.0, units='unitless')
         self.add_output(
             'm_dot_liq_out', val=np.zeros(nn), units='kg/s',
         )
@@ -236,13 +237,14 @@ class _MissionFuelFlowAssembler(om.ExplicitComponent):
         t_end = t_all[-1]
         outputs['mission_duration'] = t_end - t_start
 
+        scale = inputs['flow_rate_scale']
         if t_end > t_start:
             t_target = np.linspace(t_start, t_end, nn)
-            outputs['m_dot_liq_out'] = np.interp(
+            outputs['m_dot_liq_out'] = scale * np.interp(
                 t_target, t_all, ff_all,
             )
         else:
-            outputs['m_dot_liq_out'] = np.full(nn, ff_all.mean())
+            outputs['m_dot_liq_out'] = scale * np.full(nn, ff_all.mean())
 
 
 # ── Post-mission wrapper component ────────────────────────────
@@ -458,6 +460,12 @@ if __name__ == '__main__':
     prob.check_and_preprocess_inputs()
     prob.build_model()
 
+    # 4b. Let OpenMDAO auto-reorder the core pre-mission group from
+    # its data connections rather than declaration order. Set here
+    # (after build_model, before setup) so Aviary core stays
+    # unmodified.
+    prob.model.pre_mission.options['auto_order'] = True
+
     # 5. Add optimizer, design variables, and objective
     prob.add_driver('IPOPT')
     prob.add_design_variables()
@@ -478,7 +486,7 @@ if __name__ == '__main__':
         Aircraft.Fuel.LH2Tank.RADIUS, 2.0, units='m',
     )
     prob.set_val(
-        Aircraft.Fuel.LH2Tank.LENGTH, 15.0, units='m',
+        Aircraft.Fuel.LH2Tank.LENGTH, 5.0, units='m',
     )
     prob.set_val(
         Aircraft.Fuel.LH2Tank.N_LAYERS, 30,
@@ -494,9 +502,14 @@ if __name__ == '__main__':
         Aircraft.Fuel.LH2Tank.MAX_OPERATING_PRESSURE,
         5.0, units='bar',
     )
+    # Scale the mission fuel-flow rate seen by HyTank.
+    # 1.0 = use mission values as-is; 2.0 = double the extraction rate.
+    prob.set_val('lh2_tank.assembler.flow_rate_scale', 0.25)
 
     # 8. Run the Aviary problem
     prob.run_aviary_problem()
+
+    # prob.model.list_vars(print_arrays=True, units=True)
 
     # 9. Print results
     tank_mass_lbm = prob.get_val(
@@ -550,3 +563,4 @@ if __name__ == '__main__':
         f'start={fill[0] * 100:.1f}%, '
         f'end={fill[-1] * 100:.1f}%'
     )
+    print(Mission.BLOCK_FUEL, prob.get_val(Mission.BLOCK_FUEL))
