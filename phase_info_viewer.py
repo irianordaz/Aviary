@@ -24,8 +24,6 @@ from typing import Optional
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -34,21 +32,37 @@ import numpy as np
 _SKIP_KEYS = frozenset({'pre_mission', 'post_mission'})
 
 _PALETTE = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+    '#1f77b4',
+    '#ff7f0e',
+    '#2ca02c',
+    '#d62728',
+    '#9467bd',
+    '#8c564b',
+    '#e377c2',
+    '#7f7f7f',
+    '#bcbd22',
+    '#17becf',
 ]
 
 _TIME_TO_MIN: dict[str, float] = {
-    's': 1 / 60, 'min': 1.0, 'h': 60.0, 'hr': 60.0, 'hour': 60.0,
+    's': 1 / 60,
+    'min': 1.0,
+    'h': 60.0,
+    'hr': 60.0,
+    'hour': 60.0,
 }
 _ALT_TO_FT: dict[str, float] = {
-    'ft': 1.0, 'm': 3.280839895, 'km': 3280.839895, 'kft': 1000.0,
+    'ft': 1.0,
+    'm': 3.280839895,
+    'km': 3280.839895,
+    'kft': 1000.0,
 }
 
 
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
+
 
 def _scalar(v) -> float:
     """Numeric part of (value, unit) tuple or plain number."""
@@ -73,6 +87,7 @@ def _to_ft(value, unit: str) -> float:
 # Phase data extraction
 # ---------------------------------------------------------------------------
 
+
 def _parse_phase(name: str, d: dict) -> dict:
     """Return a flat dict of timing, altitude, and Mach info for one phase.
 
@@ -95,7 +110,7 @@ def _parse_phase(name: str, d: dict) -> dict:
         vals, unit = v[0], _unit(v)
         if isinstance(vals, (list, tuple)) and len(vals) == 2:
             t_start_ig = _to_min(vals[0], unit)
-            t_dur_ig   = _to_min(vals[1], unit)
+            t_dur_ig = _to_min(vals[1], unit)
 
     # ── Altitude ───────────────────────────────────────────────────────────
     alt_i_ig = alt_f_ig = None
@@ -126,6 +141,7 @@ def _parse_phase(name: str, d: dict) -> dict:
 
     # ── Altitude ────────────────────────────────────────────────────────────
     alt_i = alt_f = None
+    alt_i_explicit = alt_f_explicit = False
 
     # Level 1: initial_guesses.altitude = ([alt_start, alt_end], unit)
     if 'altitude' in ig:
@@ -138,9 +154,15 @@ def _parse_phase(name: str, d: dict) -> dict:
 
     # Level 2: explicit user_options values (override guesses)
     if 'altitude_initial' in uo:
-        alt_i = _to_ft(_scalar(uo['altitude_initial']), _unit(uo['altitude_initial']))
+        alt_i = _to_ft(
+            _scalar(uo['altitude_initial']), _unit(uo['altitude_initial'])
+        )
+        alt_i_explicit = True
     if 'altitude_final' in uo:
-        alt_f = _to_ft(_scalar(uo['altitude_final']), _unit(uo['altitude_final']))
+        alt_f = _to_ft(
+            _scalar(uo['altitude_final']), _unit(uo['altitude_final'])
+        )
+        alt_f_explicit = True
 
     # Level 3: constant altitude shortcuts (only if still unknown)
     if alt_i is None:
@@ -148,6 +170,7 @@ def _parse_phase(name: str, d: dict) -> dict:
             if key in uo:
                 c = _to_ft(_scalar(uo[key]), _unit(uo[key]))
                 alt_i = alt_f = c
+                alt_i_explicit = alt_f_explicit = True
                 break
 
     # ── Altitude bounds ──────────────────────────────────────────────────────
@@ -159,6 +182,7 @@ def _parse_phase(name: str, d: dict) -> dict:
 
     # ── Mach ────────────────────────────────────────────────────────────────
     mach_i = mach_f = None
+    mach_i_explicit = mach_f_explicit = False
     mach_i_ig = mach_f_ig = None
 
     # Level 1: initial_guesses.mach = ([mach_start, mach_end], unit)
@@ -173,8 +197,10 @@ def _parse_phase(name: str, d: dict) -> dict:
     # Level 2: explicit user_options values
     if 'mach_initial' in uo:
         mach_i = _scalar(uo['mach_initial'])
+        mach_i_explicit = True
     if 'mach_final' in uo:
         mach_f = _scalar(uo['mach_final'])
+        mach_f_explicit = True
 
     # Level 3: constant Mach shortcuts
     if mach_i is None:
@@ -182,8 +208,10 @@ def _parse_phase(name: str, d: dict) -> dict:
             v = uo['mach_cruise']
             c = float(v[0]) if isinstance(v, (tuple, list)) else float(v)
             mach_i = mach_f = c
+            mach_i_explicit = mach_f_explicit = True
         elif 'mach_target' in uo:
             mach_i = mach_f = float(uo['mach_target'])
+            mach_i_explicit = mach_f_explicit = True
 
     # ── Mach bounds ──────────────────────────────────────────────────────────
     mach_bounds = None
@@ -195,29 +223,34 @@ def _parse_phase(name: str, d: dict) -> dict:
     return {
         'name': name,
         # timing
-        't_initial':        t_initial,
-        't_start_ig':       t_start_ig,
-        't_dur_ig':         t_dur_ig,
+        't_initial': t_initial,
+        't_start_ig': t_start_ig,
+        't_dur_ig': t_dur_ig,
         't_initial_bounds': t_initial_bounds,
-        't_dur_nom':        t_dur_nom,
-        't_dur_bounds':     t_dur_bounds,
+        't_dur_nom': t_dur_nom,
+        't_dur_bounds': t_dur_bounds,
         # altitude
-        'alt_i':      alt_i,
-        'alt_f':      alt_f,
-        'alt_i_ig':   alt_i_ig,
-        'alt_f_ig':   alt_f_ig,
+        'alt_i': alt_i,
+        'alt_f': alt_f,
+        'alt_i_explicit': alt_i_explicit,
+        'alt_f_explicit': alt_f_explicit,
+        'alt_i_ig': alt_i_ig,
+        'alt_f_ig': alt_f_ig,
         'alt_bounds': alt_bounds,
         # mach
-        'mach_i':      mach_i,
-        'mach_f':      mach_f,
-        'mach_i_ig':   mach_i_ig,
-        'mach_f_ig':   mach_f_ig,
+        'mach_i': mach_i,
+        'mach_f': mach_f,
+        'mach_i_explicit': mach_i_explicit,
+        'mach_f_explicit': mach_f_explicit,
+        'mach_i_ig': mach_i_ig,
+        'mach_f_ig': mach_f_ig,
         'mach_bounds': mach_bounds,
     }
 
 
 def _propagate_final_states(
-    phases: list[dict], raw_phase_info: dict,
+    phases: list[dict],
+    raw_phase_info: dict,
 ) -> None:
     """Propagate final states and fill missing initial Mach for the first phase.
 
@@ -266,6 +299,7 @@ def _chain_times(phases: list[dict]) -> list[dict]:
 # Plotting
 # ---------------------------------------------------------------------------
 
+
 def _draw_profile(
     ax: plt.Axes,
     phases: list[dict],
@@ -307,56 +341,91 @@ def _draw_profile(
         # ── Initial-guess trajectory (dashed) ─────────────────────────────
         if p['t_start_ig'] is not None and p['t_dur_ig'] is not None:
             t_ig_start = p['t_start_ig']
-            t_ig_end   = t_ig_start + p['t_dur_ig']
-            y_ig_i     = p.get(f'{key_i}_ig')
-            y_ig_f     = p.get(f'{key_f}_ig')
+            t_ig_end = t_ig_start + p['t_dur_ig']
+            y_ig_i = p.get(f'{key_i}_ig')
+            y_ig_f = p.get(f'{key_f}_ig')
             if y_ig_i is not None and y_ig_f is not None:
-                ax.plot([t_ig_start, t_ig_end], [y_ig_i, y_ig_f],
-                        color=color, linewidth=1.2, linestyle='--',
-                        alpha=0.45, zorder=6)
-                ax.plot([t_ig_start, t_ig_end], [y_ig_i, y_ig_f],
-                        'x', color=color, markersize=6,
-                        markeredgewidth=1.5, alpha=0.45, zorder=6)
+                ax.plot(
+                    [t_ig_start, t_ig_end],
+                    [y_ig_i, y_ig_f],
+                    color=color,
+                    linewidth=1.2,
+                    linestyle='--',
+                    alpha=0.45,
+                    zorder=6,
+                )
+                ax.plot(
+                    [t_ig_start, t_ig_end],
+                    [y_ig_i, y_ig_f],
+                    'x',
+                    color=color,
+                    markersize=6,
+                    markeredgewidth=1.5,
+                    alpha=0.45,
+                    zorder=6,
+                )
 
         # Nominal line
-        ax.plot([t_s, t_e], [y_i, y_f],
-                color=color, linewidth=2.2, solid_capstyle='round', zorder=3)
+        ax.plot(
+            [t_s, t_e],
+            [y_i, y_f],
+            color=color,
+            linewidth=2.2,
+            solid_capstyle='round',
+            zorder=3,
+        )
 
         # Phase label at segment midpoint
         t_mid = (t_s + t_e) / 2
         y_mid = (y_i + y_f) / 2
         ax.text(
-            t_mid, y_mid, p['name'],
-            ha='center', va='bottom', fontsize=7.5,
-            color=color, fontweight='bold',
-            bbox=dict(boxstyle='round,pad=0.18', fc='white', ec='none', alpha=0.75),
+            t_mid,
+            y_mid,
+            p['name'],
+            ha='center',
+            va='bottom',
+            fontsize=7.5,
+            color=color,
+            fontweight='bold',
+            bbox=dict(
+                boxstyle='round,pad=0.18', fc='white', ec='none', alpha=0.75
+            ),
             zorder=5,
         )
 
         # ── Start-time bounds ●  ──────────────────────────────────────────
+        y_i_explicit = p.get(f'{key_i}_explicit', False)
         tib = p['t_initial_bounds']
         if tib is not None:
             xerr_lo = max(t_s - tib[0], 0.0)
             xerr_hi = max(tib[1] - t_s, 0.0)
             ax.errorbar(
-                t_s, y_i,
+                t_s,
+                y_i,
                 xerr=[[xerr_lo], [xerr_hi]],
-                fmt='o', ms=6, color=color,
-                ecolor=color, capsize=8, capthick=1.5, elinewidth=1.5,
-                alpha=0.80, zorder=4,
+                fmt='o',
+                ms=6,
+                color=color,
+                ecolor=color,
+                capsize=8,
+                capthick=1.5,
+                elinewidth=1.5,
+                alpha=0.80,
+                zorder=4,
             )
             t_extremes.extend([tib[0], tib[1]])
-        else:
+        elif y_i_explicit:
             ax.plot(t_s, y_i, 'o', ms=6, color=color, zorder=4, alpha=0.85)
 
         # ── Duration bounds (shaded) ───────────────────────────────────
+        y_f_explicit = p.get(f'{key_f}_explicit', False)
         db = p['t_dur_bounds']
         if db is not None:
             t_end_min = t_s + db[0]
             t_end_max = t_s + db[1]
             dur_bounds.append((t_end_min, t_end_max, color))
             t_extremes.extend([t_end_min, t_end_max])
-        else:
+        elif y_f_explicit:
             ax.plot(t_e, y_f, 's', ms=5, color=color, zorder=4, alpha=0.85)
 
     # ── Axes styling ─────────────────────────────────────────────────────────
@@ -374,8 +443,11 @@ def _draw_profile(
     for t_lo_d, t_hi_d, color in dur_bounds:
         ax.fill_betweenx(
             (y_lo, y_hi),
-            t_lo_d, t_hi_d,
-            color=color, alpha=0.10, zorder=1,
+            t_lo_d,
+            t_hi_d,
+            color=color,
+            alpha=0.10,
+            zorder=1,
         )
 
     if t_extremes:
@@ -384,53 +456,93 @@ def _draw_profile(
         ax.set_xlim(t_lo - margin, t_hi + margin)
 
 
-def _build_legend(ax: plt.Axes, phases: list[dict]) -> None:
-    """Add a combined legend (phase colours + bound symbols) below *ax*."""
-    # ── Phase-colour patches ──────────────────────────────────────────────
+def _build_legend(
+    ax: plt.Axes,
+    phases: list[dict],
+    *,
+    hide_initial_guesses: bool = False,
+    hide_time_initial_bounds: bool = False,
+    hide_time_duration_bounds: bool = False,
+) -> tuple[list, list]:
+    """Build legend handles and labels for phases + bound symbols.
+
+    Returns
+    -------
+    tuple of (handles, labels)
+    """
+    # ── Phase-colour patches (in insertion order from phase_info) ────────
     phase_handles = [
-        mpatches.Patch(facecolor=_PALETTE[i % len(_PALETTE)],
-                       label=p['name'], edgecolor='white')
+        mpatches.Patch(
+            facecolor=_PALETTE[i % len(_PALETTE)],
+            label=p['name'],
+            edgecolor='white',
+        )
         for i, p in enumerate(phases)
     ]
+    phase_labels = [p['name'] for p in phases]
 
     # ── Bound-symbol markers ──────────────────────────────────────────────
     from matplotlib.lines import Line2D
 
-    # initial_guesses: x marker with dashed line
     ig_handle = Line2D(
-        [-0.4, 0.4], [0, 0],
-        color='#555555', linewidth=1.2, linestyle='--',
-        marker='x', markersize=8,
-        markeredgecolor='#555555', markeredgewidth=1.5,
-        label='initial_guesses',
+        [-0.4, 0.4],
+        [0, 0],
+        color='#555555',
+        linewidth=1.2,
+        linestyle='--',
+        marker='x',
+        markersize=8,
+        markerfacecolor='white',
+        markeredgecolor='black',
+        markeredgewidth=1.5,
+        label='initial guesses',
     )
 
-    # time_initial_bounds: circle with horizontal error bar (drawn as a line)
     initial_bounds_handle = Line2D(
-        [-0.4, 0.4], [0, 0],
-        color='#555555', linewidth=1.5,
-        marker='o', markersize=8,
-        markerfacecolor='none', markeredgecolor='#555555', markeredgewidth=1.5,
-        label='time_initial_bounds',
+        [-0.4, 0.4],
+        [0, 0],
+        color='#555555',
+        linewidth=1.5,
+        marker='o',
+        markersize=8,
+        markerfacecolor='none',
+        markeredgecolor='#555555',
+        markeredgewidth=1.5,
+        label='time initial bounds',
     )
-    # time_duration_bounds: shaded rectangle
+
     dur_bounds_handle = mpatches.Patch(
-        facecolor='#888888', alpha=0.30,
-        label='time_duration_bounds', edgecolor='#888888',
+        facecolor='#888888',
+        alpha=0.30,
+        label='time duration bounds',
+        edgecolor='#888888',
     )
 
-    all_handles = [ig_handle, initial_bounds_handle, dur_bounds_handle] + phase_handles
+    bound_handles = [ig_handle, initial_bounds_handle, dur_bounds_handle]
+    bound_labels = [
+        'initial guesses',
+        'time initial bounds',
+        'time duration bounds',
+    ]
 
-    ax.legend(
-        handles=all_handles,
-        fontsize=8, framealpha=0.88, edgecolor='#cccccc',
-        loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=min(len(phases) + 2, 6),
-    )
+    # Filter out hidden items
+    if hide_initial_guesses:
+        bound_handles.pop(0)
+        bound_labels.pop(0)
+    if hide_time_initial_bounds:
+        bound_handles.pop(0)
+        bound_labels.pop(0)
+    if hide_time_duration_bounds:
+        bound_handles.pop(0)
+        bound_labels.pop(0)
+
+    return (phase_handles + bound_handles, phase_labels + bound_labels)
 
 
 # ---------------------------------------------------------------------------
 # Phase info loader
 # ---------------------------------------------------------------------------
+
 
 def load_phase_info(path: str) -> dict:
     """Import *path* as a Python module and return its ``phase_info`` dict."""
@@ -449,11 +561,15 @@ def load_phase_info(path: str) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def plot_phase_info(
     phase_info: dict,
     *,
     title: str = '',
     phases: Optional[list[str]] = None,
+    hide_initial_guesses: bool = False,
+    hide_time_initial_bounds: bool = False,
+    hide_time_duration_bounds: bool = False,
 ) -> None:
     """Render altitude-vs-time and Mach-vs-time for *phase_info*.
 
@@ -466,6 +582,12 @@ def plot_phase_info(
     phases:
         Optional list of phase names to plot. If ``None``, all phases are
         plotted.
+    hide_initial_guesses:
+        Hide the initial-guess marker from the legend.
+    hide_time_initial_bounds:
+        Hide the time-initial-bounds marker from the legend.
+    hide_time_duration_bounds:
+        Hide the time-duration-bounds marker from the legend.
     """
     all_phases = [
         _parse_phase(k, v)
@@ -498,26 +620,53 @@ def plot_phase_info(
     phases_to_plot = _chain_times(phases_to_plot)
 
     fig, (ax_alt, ax_mach) = plt.subplots(
-        1, 2, figsize=(16, 6), layout='constrained',
+        1,
+        2,
+        figsize=(16, 6),
     )
     fig.patch.set_facecolor('#ffffff')
     ax_alt.set_facecolor('#ffffff')
     ax_mach.set_facecolor('#ffffff')
 
     _draw_profile(
-        ax_alt, phases_to_plot, 'alt_i', 'alt_f',
-        ylabel='Altitude [ft]',
+        ax_alt,
+        phases_to_plot,
+        'alt_i',
+        'alt_f',
+        ylabel='Altitude (ft)',
         y_formatter=mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'),
     )
     ax_alt.set_title('Altitude vs Time', fontsize=11, fontweight='bold', pad=8)
-    _build_legend(ax_alt, phases_to_plot)
 
     _draw_profile(
-        ax_mach, phases_to_plot, 'mach_i', 'mach_f',
-        ylabel='Mach [-]',
+        ax_mach,
+        phases_to_plot,
+        'mach_i',
+        'mach_f',
+        ylabel='Mach',
     )
-    ax_mach.set_title('Mach Number vs Time', fontsize=11, fontweight='bold', pad=8)
-    _build_legend(ax_mach, phases_to_plot)
+    ax_mach.set_title(
+        'Mach Number vs Time', fontsize=11, fontweight='bold', pad=8
+    )
+
+    # ── Single figure-level legend, right side, vertically centred ────────
+    handles, labels = _build_legend(
+        ax_alt,
+        phases_to_plot,
+        hide_initial_guesses=hide_initial_guesses,
+        hide_time_initial_bounds=hide_time_initial_bounds,
+        hide_time_duration_bounds=hide_time_duration_bounds,
+    )
+    fig.legend(
+        handles=handles,
+        labels=labels,
+        fontsize=8,
+        framealpha=0.88,
+        edgecolor='#cccccc',
+        loc='center right',
+        bbox_to_anchor=(1.0, 0.5),
+    )
+    fig.tight_layout(rect=[0, 0, 0.88, 1])
 
     suptitle = 'Trajectory Definition'
     if title:
@@ -530,6 +679,7 @@ def plot_phase_info(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -553,11 +703,33 @@ def main() -> None:
             'plotted. Phase names are matched case-insensitively.'
         ),
     )
+    parser.add_argument(
+        '--hide-initial-guesses',
+        action='store_true',
+        help='Hide the initial-guess marker from the legend.',
+    )
+    parser.add_argument(
+        '--hide-time-initial-bounds',
+        action='store_true',
+        help='Hide the time-initial-bounds marker from the legend.',
+    )
+    parser.add_argument(
+        '--hide-time-duration-bounds',
+        action='store_true',
+        help='Hide the time-duration-bounds marker from the legend.',
+    )
     args = parser.parse_args()
 
     pi = load_phase_info(args.phase_info_path)
     title = Path(args.phase_info_path).stem
-    plot_phase_info(pi, title=title, phases=args.phases)
+    plot_phase_info(
+        pi,
+        title=title,
+        phases=args.phases,
+        hide_initial_guesses=args.hide_initial_guesses,
+        hide_time_initial_bounds=args.hide_time_initial_bounds,
+        hide_time_duration_bounds=args.hide_time_duration_bounds,
+    )
 
 
 if __name__ == '__main__':
