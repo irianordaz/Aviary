@@ -198,8 +198,115 @@ threaded through the physics components.
   pressure drops from 1.50 → 1.12 bar, fill drops 95% → 92.4%,
   liquid T stable at 113 K.
 
+## 7. Fixed NaN/inf error at `num_nodes=37` (BDF3 stability)
+
+HyTank's BDF3 integrator has a dt-dependent stability region. When
+the trajectory produced 36 total nodes (rounded up to odd → 37),
+the resulting `dt ≈ 750 s` for a ~27 000 s mission pushed `h×λ`
+outside the stable region and Newton diverged after 4 iterations
+with `inf`/`NaN` residuals.
+
+### Root cause
+- BDF3 stability depends on the product of the step size and the
+  ODE Jacobian eigenvalue. For LNG boil-off at typical flow rates,
+  `dt ≈ 750 s` is unstable; `dt ≈ 2 700 s` (11 nodes) is robustly
+  stable.
+- Systematic tests over `nn=11–73` and flow rates `0–1.0 kg/s`
+  confirmed: 11–35 nodes mostly stable, 37–61 mostly unstable,
+  63+ mostly stable again — irregular, flow-rate-dependent pattern.
+
+### Fix
+Decoupled HyTank's analysis grid from the Dymos trajectory
+resolution. Added a `hytank_num_nodes` parameter to
+`CryoTankBuilder` (default `11`). The `_MissionFuelFlowAssembler`
+still reads the full trajectory at whatever resolution Dymos
+produces, but resamples onto the fixed 11-node grid before feeding
+HyTank. This keeps `dt ≈ 2 700 s` regardless of trajectory node
+count, while `phase_mission_bus_lengths` continues to supply the
+true Dymos node counts for the bus connections.
+
+## 8. Arbitrary phase names and counts
+
+Removed all hardcoded phase lists (`_PHASES`, `_PHASE_TIME_DEFAULTS`)
+from `cryo_example_lng.py` (and subsequently `cryo_example.py`).
+
+### Changes
+- `_MissionFuelFlowAssembler` — phases and bus lengths supplied
+  as component options (`phase_names`, `bus_lengths`) set at
+  construction time by the builder; adds per-phase inputs
+  dynamically in `setup()`.
+- `CryoTankPostMissionComp` — same `phase_names`/`bus_lengths`
+  options; sets per-phase `set_input_defaults` from a helper.
+- `_phase_time_defaults(phase_names, bus_lengths)` — generates
+  non-degenerate sequential time arrays (100 s/node, 100 s gap
+  between phases) for each phase before bus connections are live.
+- `CryoTankBuilder.build_post_mission` — reads
+  `phase_mission_bus_lengths` (actual Dymos node counts) when
+  provided by Aviary; falls back to `mission_info.keys()` or the
+  three-phase default if called outside the full Aviary flow.
+- `CryoTankBuilder.get_post_mission_bus_variables` — iterates
+  `mission_info.keys()` so any rename or addition in `phase_info`
+  is reflected automatically.
+
+Adding a fourth phase (e.g. `reserve_cruise`) to `phase_info`
+requires zero changes to the builder or component code.
+
+## 9. Shared infrastructure extracted to `cryo_builder.py`
+
+`cryo_example_lng.py` and `cryo_example.py` (LH2) had identical
+builder/component structure differing only in propellant-specific
+details. Consolidated into a single generic module.
+
+### New file: `cryo_builder.py`
+Public exports:
+
+| Name | Type | Purpose |
+|---|---|---|
+| `KG_TO_LBM` | constant | unit conversion |
+| `_phase_time_defaults` | function | pre-connection time defaults |
+| `_TankWeightToFuelSystemMass` | `ExplicitComponent` | kg → lbm, maps to `FUEL_SYSTEM_MASS` |
+| `_MissionFuelFlowAssembler` | `ExplicitComponent` | concatenate + resample per-phase fuel-flow |
+| `CryoTankWeightComp` | `Group` | pre-mission tank weight wrapper |
+| `CryoTankPostMissionComp` | `Group` | post-mission HyTank thermal analysis |
+| `CryoTankBuilder` | `SubsystemBuilder` | Aviary external subsystem builder |
+
+`CryoTankBuilder.__init__` signature:
+```python
+CryoTankBuilder(
+    name,               # Aviary subsystem name
+    meta_data,          # extended metadata dict
+    tank_vars,          # dict: RADIUS/LENGTH/… → Aviary var strings
+    thermals_class,     # e.g. LH2TankThermals or LNGTankThermals
+    thermals_kwargs=None,   # extra kwargs forwarded to thermals_class
+    t_env_default=300.0,    # default env temperature (K)
+    hytank_num_nodes=11,    # odd HyTank BDF3 node count
+)
+```
+
+### `cryo_example_lng.py` — rewritten as thin wrapper
+Only LNG-specific content remains:
+- `Aircraft.Fuel.LNGTank` variable extension + 6 `av.add_meta_data`
+  calls.
+- `_LNG_TANK_VARS` mapping dict.
+- Main script: `CryoTankBuilder(name='lng_tank', ...,
+  thermals_class=LNGTankThermals, t_env_default=300.0)`.
+- LNG-specific mass initial guesses for the trajectory states.
+
+### `cryo_example.py` → `cryo_example_lh2.py` (renamed + rewritten)
+Parallel thin wrapper for LH2:
+- `Aircraft.Fuel.LH2Tank` variable extension + metadata.
+- `_LH2_TANK_VARS` mapping dict.
+- Main script: `CryoTankBuilder(name='lh2_tank', ...,
+  thermals_class=LH2TankThermals,
+  thermals_kwargs={'ullage_T_init': 22.0}, t_env_default=273.0)`.
+
+`cryo_example.py` deleted.
+
 ## Files touched
-- `cryo_example.py`
+- `cryo_example.py` → deleted
+- `cryo_example_lh2.py` (renamed + rewritten from `cryo_example.py`)
+- `cryo_example_lng.py` (rewritten)
+- `cryo_builder.py` (new)
 - `aviary/core/pre_mission_group.py`
 - `pixi.toml`
 - `HyTank/hytank/weight.py`
