@@ -145,12 +145,14 @@ _CATEGORY_COLOR: dict[str, str] = {
 }
 
 
-def _shade(hex_color: str, step: int, total: int) -> tuple:
-    """Lighten *hex_color* for within-category shading (step 0 = darkest)."""
+_MAX_BLEND = 0.65
+
+
+def _apply_blend(hex_color: str, blend: float) -> tuple:
+    """Blend *hex_color* toward white by *blend* ∈ [0, 1] (0 = base color)."""
     r = int(hex_color[1:3], 16) / 255
     g = int(hex_color[3:5], 16) / 255
     b = int(hex_color[5:7], 16) / 255
-    blend = 0.0 if total <= 1 else step / (total - 1) * 0.40
     return (r + (1 - r) * blend, g + (1 - g) * blend, b + (1 - b) * blend)
 
 
@@ -244,18 +246,32 @@ def _label_for_path(path: str) -> str:
 def _assign_colors(
     entries: list[tuple[str, str, float]],
 ) -> list[tuple]:
-    """Return a colour per entry using within-category shading."""
-    cat_counts: dict[str, int] = {}
-    for _, cat, _ in entries:
-        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+    """Return a colour per entry based on within-category mass rank.
 
-    cat_step: dict[str, int] = {}
+    Within each category the heaviest item gets the full base colour
+    (darkest) and lighter items are progressively blended toward white.
+    Rank is derived from the actual mass values, not from list position.
+    """
+    # Find the heaviest mass in each category
+    cat_max: dict[str, float] = {}
+    for _, cat, mass in entries:
+        cat_max[cat] = max(cat_max.get(cat, 0.0), mass)
+
+    # Sort each category's masses descending so we can assign integer ranks
+    cat_sorted: dict[str, list[float]] = {}
+    for _, cat, mass in entries:
+        cat_sorted.setdefault(cat, []).append(mass)
+    for cat in cat_sorted:
+        cat_sorted[cat].sort(reverse=True)
+
     colors = []
-    for _, cat, _ in entries:
-        step = cat_step.get(cat, 0)
+    for _, cat, mass in entries:
+        ranked = cat_sorted[cat]
+        n = len(ranked)
+        rank = ranked.index(mass)          # 0 = heaviest → darkest
+        blend = 0.0 if n == 1 else rank / (n - 1) * _MAX_BLEND
         base = _CATEGORY_COLOR.get(cat, '#808080')
-        colors.append(_shade(base, step, cat_counts[cat]))
-        cat_step[cat] = step + 1
+        colors.append(_apply_blend(base, blend))
     return colors
 
 
@@ -368,28 +384,27 @@ def _plot_comparison(
     masses_b: list[float] = []
     categories: list[str] = []
 
-    cat_counts: dict[str, int] = {}
+    # Build unified entry list for color assignment (use max mass across both
+    # DBs per item so shading is consistent regardless of which DB is heavier)
+    unified_entries = []
     for lbl in all_labels:
         cat = (entry_map_a.get(lbl) or entry_map_b.get(lbl))[0]
-        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        mass_a = entry_map_a.get(lbl, (None, 0.0))[1]
+        mass_b = entry_map_b.get(lbl, (None, 0.0))[1]
+        unified_entries.append((lbl, cat, max(mass_a, mass_b)))
 
-    cat_step: dict[str, int] = {}
-    for lbl in all_labels:
-        cat = (entry_map_a.get(lbl) or entry_map_b.get(lbl))[0]
+    base_colors = _assign_colors(unified_entries)
+
+    for (lbl, cat, _), base_color in zip(unified_entries, base_colors):
         categories.append(cat)
-        step = cat_step.get(cat, 0)
-        base = _CATEGORY_COLOR.get(cat, '#808080')
-        color = _shade(base, step, cat_counts[cat])
-        colors_a.append(color)
-        # DB-B: lighten further for distinction
-        r, g, b = color
+        colors_a.append(base_color)
+        # DB-B: lighten further for visual distinction
+        r, g, b = base_color
         colors_b.append((
             r + (1 - r) * 0.30,
             g + (1 - g) * 0.30,
             b + (1 - b) * 0.30,
         ))
-        cat_step[cat] = step + 1
-
         mass_a = entry_map_a.get(lbl, (None, 0.0))[1]
         mass_b = entry_map_b.get(lbl, (None, 0.0))[1]
         fracs_a.append(mass_a / gross_a)
