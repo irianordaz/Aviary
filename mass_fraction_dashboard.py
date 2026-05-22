@@ -146,6 +146,7 @@ _CATEGORY_COLOR: dict[str, str] = {
 
 
 _MAX_BLEND = 0.65
+_BAR_SPACING = 1.6   # multiplier on y-positions; >1 adds gap between bars
 
 
 def _apply_blend(hex_color: str, blend: float) -> tuple:
@@ -285,7 +286,16 @@ def _sorted_entries(
 # Single-database plot
 # ---------------------------------------------------------------------------
 
-def _plot_single(ax: plt.Axes, mass_data: dict, gross: float):
+def _plot_single(
+    ax: plt.Axes,
+    mass_data: dict,
+    gross: float,
+    *,
+    bar_scale: float = 1.0,
+    spacing_scale: float = 1.0,
+    label_font_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+):
     entries = _sorted_entries(mass_data['entries'])
     colors = _assign_colors(entries)
 
@@ -295,8 +305,9 @@ def _plot_single(ax: plt.Axes, mass_data: dict, gross: float):
     categories = [e[1] for e in entries]
 
     n = len(labels)
-    y_pos = np.arange(n)
-    bar_height = 0.58
+    spacing = _BAR_SPACING * spacing_scale
+    bar_height = 0.58 * bar_scale
+    y_pos = np.arange(n) * spacing
 
     bars = ax.barh(
         y_pos, fractions,
@@ -307,16 +318,17 @@ def _plot_single(ax: plt.Axes, mass_data: dict, gross: float):
     )
     ax.invert_yaxis()
 
+    annot_fs = 8.0 * label_font_scale
     for bar, frac, mass in zip(bars, fractions, masses):
         ax.text(
             bar.get_width() + 0.0015,
             bar.get_y() + bar.get_height() / 2,
             f'{frac * 100:.1f}%  ({mass:,.0f} lbm)',
-            va='center', ha='left', fontsize=8.0, color='#2a2a2a',
+            va='center', ha='left', fontsize=annot_fs, color='#2a2a2a',
         )
 
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(labels, fontsize=9.0)
+    ax.set_yticklabels(labels, fontsize=9.0 * label_font_scale)
     ax.tick_params(axis='y', length=0)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -335,7 +347,8 @@ def _plot_single(ax: plt.Axes, mass_data: dict, gross: float):
                 facecolor=_CATEGORY_COLOR[cat], label=cat, edgecolor='white',
             ))
             seen.add(cat)
-    ax.legend(handles=handles, loc='lower right', fontsize=8.5,
+    ax.legend(handles=handles, loc='lower right',
+              fontsize=8.5 * legend_font_scale,
               framealpha=0.85, edgecolor='#cccccc')
 
     return max_frac
@@ -349,6 +362,12 @@ def _plot_comparison(
     ax: plt.Axes,
     data_a: dict, label_a: str,
     data_b: dict, label_b: str,
+    *,
+    bar_scale: float = 1.0,
+    spacing_scale: float = 1.0,
+    pair_spacing_scale: float = 1.0,
+    label_font_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
 ):
     gross_a = data_a['gross_mass']
     gross_b = data_b['gross_mass']
@@ -372,9 +391,10 @@ def _plot_comparison(
     all_labels = sorted(all_labels, key=sort_key, reverse=True)
 
     n = len(all_labels)
-    offset = 0.22
-    bar_height = 0.38
-    y_pos = np.arange(n)
+    offset = 0.22 * pair_spacing_scale
+    bar_height = 0.38 * bar_scale
+    spacing = _BAR_SPACING * spacing_scale
+    y_pos = np.arange(n) * spacing
 
     colors_a: list[tuple] = []
     colors_b: list[tuple] = []
@@ -425,13 +445,14 @@ def _plot_comparison(
     ax.invert_yaxis()
 
     # Annotations
+    annot_fs = 7.2 * label_font_scale
     for bar, frac, mass in zip(bars_a, fracs_a, masses_a):
         if mass > 0:
             ax.text(
                 bar.get_width() + 0.0012,
                 bar.get_y() + bar.get_height() / 2,
                 f'{frac * 100:.1f}%  ({mass:,.0f})',
-                va='center', ha='left', fontsize=7.2, color='#222222',
+                va='center', ha='left', fontsize=annot_fs, color='#222222',
             )
     for bar, frac, mass in zip(bars_b, fracs_b, masses_b):
         if mass > 0:
@@ -439,11 +460,11 @@ def _plot_comparison(
                 bar.get_width() + 0.0012,
                 bar.get_y() + bar.get_height() / 2,
                 f'{frac * 100:.1f}%  ({mass:,.0f})',
-                va='center', ha='left', fontsize=7.2, color='#444444',
+                va='center', ha='left', fontsize=annot_fs, color='#444444',
             )
 
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(all_labels, fontsize=8.5)
+    ax.set_yticklabels(all_labels, fontsize=8.5 * label_font_scale)
     ax.tick_params(axis='y', length=0)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -470,7 +491,7 @@ def _plot_comparison(
     ]
     ax.legend(
         handles=cat_handles + [mpatches.Patch(visible=False)] + db_handles,
-        loc='lower right', fontsize=8.0,
+        loc='lower right', fontsize=8.0 * legend_font_scale,
         framealpha=0.88, edgecolor='#cccccc',
     )
 
@@ -481,30 +502,59 @@ def _plot_comparison(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def plot_dashboard(db_paths: list[str]):
+def plot_dashboard(
+    db_paths: list[str],
+    *,
+    bar_scale: float = 1.0,
+    spacing_scale: float = 1.0,
+    pair_spacing_scale: float = 1.0,
+    title_font_scale: float = 1.0,
+    label_font_scale: float = 1.0,
+    legend_font_scale: float = 1.0,
+):
     """Load data and display the mass fraction dashboard.
 
     Args:
         db_paths: one or two paths to SQLite case databases.
+        bar_scale: multiplier for bar height (default 1.0).
+        spacing_scale: multiplier for vertical spacing between
+            different mass items (default 1.0).
+        pair_spacing_scale: multiplier for spacing between the two
+            solution bars of the same mass item in comparison mode
+            (default 1.0, no effect in single-DB mode).
+        title_font_scale: multiplier for the chart title and axis
+            label font sizes (default 1.0).
+        label_font_scale: multiplier for mass-name tick labels and
+            bar annotation font sizes (default 1.0).
+        legend_font_scale: multiplier for legend font size
+            (default 1.0).
     """
+    shared_kw = dict(
+        bar_scale=bar_scale,
+        spacing_scale=spacing_scale,
+        label_font_scale=label_font_scale,
+        legend_font_scale=legend_font_scale,
+    )
+
     if len(db_paths) == 1:
         data = load_mass_data(db_paths[0])
         gross = data['gross_mass']
         n = len(data['entries'])
-        fig_height = max(6, n * 0.50 + 2.2)
+        fig_height = max(6, n * 0.50 * _BAR_SPACING * spacing_scale + 2.2)
         fig, ax = plt.subplots(figsize=(12, fig_height))
         fig.patch.set_facecolor('#f5f7fa')
         ax.set_facecolor('#f5f7fa')
-        _plot_single(ax, data, gross)
+        _plot_single(ax, data, gross, **shared_kw)
         ax.xaxis.set_major_formatter(
             mticker.PercentFormatter(xmax=1.0, decimals=0)
         )
-        ax.set_xlabel('Fraction of Gross Mass', fontsize=10, labelpad=6)
+        ax.set_xlabel('Fraction of Gross Mass',
+                      fontsize=10 * title_font_scale, labelpad=6)
         db_name = Path(db_paths[0]).name
         fig.suptitle(
             f'Mass Fractions — {db_name}\n'
             f'Gross Mass: {gross:,.0f} lbm',
-            fontsize=12, fontweight='bold', y=0.99,
+            fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
 
@@ -518,22 +568,27 @@ def plot_dashboard(db_paths: list[str]):
             lbl
             for lbl, _, _ in data_a['entries'] + data_b['entries']
         })
-        fig_height = max(7, n_items * 0.62 + 2.5)
+        fig_height = max(7, n_items * 0.62 * _BAR_SPACING * spacing_scale + 2.5)
         fig, ax = plt.subplots(figsize=(13, fig_height))
         fig.patch.set_facecolor('#f5f7fa')
         ax.set_facecolor('#f5f7fa')
-        _plot_comparison(ax, data_a, label_a, data_b, label_b)
+        _plot_comparison(
+            ax, data_a, label_a, data_b, label_b,
+            **shared_kw,
+            pair_spacing_scale=pair_spacing_scale,
+        )
         ax.xaxis.set_major_formatter(
             mticker.PercentFormatter(xmax=1.0, decimals=0)
         )
-        ax.set_xlabel('Fraction of Gross Mass', fontsize=10, labelpad=6)
+        ax.set_xlabel('Fraction of Gross Mass',
+                      fontsize=10 * title_font_scale, labelpad=6)
         gross_a = data_a['gross_mass']
         gross_b = data_b['gross_mass']
         fig.suptitle(
             f'Mass Fraction Comparison\n'
             f'{label_a}: {gross_a:,.0f} lbm     '
             f'{label_b}: {gross_b:,.0f} lbm',
-            fontsize=12, fontweight='bold', y=0.99,
+            fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
 
@@ -550,7 +605,8 @@ def main():
         description=(
             'Mass fraction dashboard for Aviary / OpenMDAO SQLite databases. '
             'Pass one database for a single chart or two for a comparison.'
-        )
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         'database',
@@ -558,10 +614,61 @@ def main():
         metavar='DB',
         help='Path(s) to SQLite database file(s) (1 or 2)',
     )
+    parser.add_argument(
+        '--bar-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for bar height',
+    )
+    parser.add_argument(
+        '--spacing-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for vertical spacing between bars',
+    )
+    parser.add_argument(
+        '--title-font-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for the chart title and axis label font size',
+    )
+    parser.add_argument(
+        '--pair-spacing-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for spacing between the two solution bars '
+             'of the same mass item (comparison mode only)',
+    )
+    parser.add_argument(
+        '--label-font-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for mass-name tick labels and bar annotations',
+    )
+    parser.add_argument(
+        '--legend-font-scale',
+        type=float,
+        default=1.0,
+        metavar='S',
+        help='Scale multiplier for legend font size',
+    )
     args = parser.parse_args()
     if len(args.database) > 2:
         parser.error('At most two database paths are supported.')
-    plot_dashboard(args.database)
+    plot_dashboard(
+        args.database,
+        bar_scale=args.bar_scale,
+        spacing_scale=args.spacing_scale,
+        pair_spacing_scale=args.pair_spacing_scale,
+        title_font_scale=args.title_font_scale,
+        label_font_scale=args.label_font_scale,
+        legend_font_scale=args.legend_font_scale,
+    )
 
 
 if __name__ == '__main__':
