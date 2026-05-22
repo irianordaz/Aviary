@@ -24,7 +24,6 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Variable catalog: (promoted_name, display_label, category)
 # Entries with zero or missing values are dropped automatically.
@@ -42,110 +41,103 @@ _VARIABLE_CATALOG: list[tuple[str, str, str]] = [
     # --- Fuel ---
     # mission:fuel IS the block fuel total; taxi/takeoff/reserve are sub-segments
     # already included in it, so listing them separately would double-count.
-    ('mission:fuel',
-     'Mission Fuel (Block)', _CAT_FUEL),
-    ('mission:reserve_fuel',
-     'Reserve Fuel', _CAT_FUEL),
-    ('mission:reserve_fuel_additional',
-     'Additional Reserve', _CAT_FUEL),
+    ('mission:fuel', 'Mission Fuel (Block)', _CAT_FUEL),
+    ('mission:reserve_fuel', 'Reserve Fuel', _CAT_FUEL),
+    ('mission:reserve_fuel_additional', 'Additional Reserve', _CAT_FUEL),
     # --- Payload ---
-    ('aircraft:crew_and_payload:passenger_mass_total',
-     'Passengers', _CAT_PAYLOAD),
-    ('aircraft:crew_and_payload:baggage_mass',
-     'Baggage', _CAT_PAYLOAD),
-    ('aircraft:crew_and_payload:cargo_mass',
-     'Cargo', _CAT_PAYLOAD),
-    ('aircraft:crew_and_payload:misc_cargo',
-     'Misc Cargo', _CAT_PAYLOAD),
-    ('aircraft:crew_and_payload:wing_cargo',
-     'Wing Cargo', _CAT_PAYLOAD),
+    (
+        'aircraft:crew_and_payload:passenger_mass_total',
+        'Passengers',
+        _CAT_PAYLOAD,
+    ),
+    ('aircraft:crew_and_payload:baggage_mass', 'Baggage', _CAT_PAYLOAD),
+    ('aircraft:crew_and_payload:cargo_mass', 'Cargo', _CAT_PAYLOAD),
+    ('aircraft:crew_and_payload:misc_cargo', 'Misc Cargo', _CAT_PAYLOAD),
+    ('aircraft:crew_and_payload:wing_cargo', 'Wing Cargo', _CAT_PAYLOAD),
     # --- Crew & Service ---
     # unusable_fuel and engine_oil are part of Aviary's useful_load, not payload
-    ('aircraft:crew_and_payload:flight_crew_mass',
-     'Flight Crew', _CAT_CREW),
-    ('aircraft:crew_and_payload:cabin_crew_mass',
-     'Cabin Crew', _CAT_CREW),
-    ('aircraft:crew_and_payload:passenger_service_mass',
-     'Passenger Service', _CAT_CREW),
-    ('aircraft:crew_and_payload:cargo_container_mass',
-     'Cargo Containers', _CAT_CREW),
-    ('aircraft:fuel:unusable_fuel_mass',
-     'Unusable Fuel', _CAT_CREW),
-    ('aircraft:propulsion:total_engine_oil_mass',
-     'Engine Oil', _CAT_CREW),
+    ('aircraft:crew_and_payload:flight_crew_mass', 'Flight Crew', _CAT_CREW),
+    ('aircraft:crew_and_payload:cabin_crew_mass', 'Cabin Crew', _CAT_CREW),
+    (
+        'aircraft:crew_and_payload:passenger_service_mass',
+        'Passenger Service',
+        _CAT_CREW,
+    ),
+    (
+        'aircraft:crew_and_payload:cargo_container_mass',
+        'Cargo Containers',
+        _CAT_CREW,
+    ),
+    ('aircraft:fuel:unusable_fuel_mass', 'Unusable Fuel', _CAT_CREW),
+    ('aircraft:propulsion:total_engine_oil_mass', 'Engine Oil', _CAT_CREW),
     # --- Structure ---
-    ('aircraft:fuselage:mass',
-     'Fuselage', _CAT_STRUCTURE),
-    ('aircraft:wing:mass',
-     'Wing', _CAT_STRUCTURE),
-    ('aircraft:landing_gear:main_gear_mass',
-     'Main Landing Gear', _CAT_STRUCTURE),
-    ('aircraft:landing_gear:nose_gear_mass',
-     'Nose Landing Gear', _CAT_STRUCTURE),
-    ('aircraft:horizontal_tail:mass',
-     'Horizontal Tail', _CAT_STRUCTURE),
-    ('aircraft:vertical_tail:mass',
-     'Vertical Tail', _CAT_STRUCTURE),
-    ('aircraft:canard:mass',
-     'Canard', _CAT_STRUCTURE),
-    ('aircraft:fins:mass',
-     'Fins', _CAT_STRUCTURE),
-    ('aircraft:nacelle:mass',
-     'Nacelle', _CAT_STRUCTURE),
-    ('aircraft:paint:mass',
-     'Paint', _CAT_STRUCTURE),
+    ('aircraft:fuselage:mass', 'Fuselage', _CAT_STRUCTURE),
+    ('aircraft:wing:mass', 'Wing', _CAT_STRUCTURE),
+    (
+        'aircraft:landing_gear:main_gear_mass',
+        'Main Landing Gear',
+        _CAT_STRUCTURE,
+    ),
+    (
+        'aircraft:landing_gear:nose_gear_mass',
+        'Nose Landing Gear',
+        _CAT_STRUCTURE,
+    ),
+    ('aircraft:horizontal_tail:mass', 'Horizontal Tail', _CAT_STRUCTURE),
+    ('aircraft:vertical_tail:mass', 'Vertical Tail', _CAT_STRUCTURE),
+    ('aircraft:canard:mass', 'Canard', _CAT_STRUCTURE),
+    ('aircraft:fins:mass', 'Fins', _CAT_STRUCTURE),
+    ('aircraft:nacelle:mass', 'Nacelle', _CAT_STRUCTURE),
+    ('aircraft:paint:mass', 'Paint', _CAT_STRUCTURE),
     # --- Propulsion ---
-    ('aircraft:propulsion:total_engine_mass',
-     'Engines', _CAT_PROPULSION),
-    ('aircraft:fuel:fuel_system_mass',
-     'Fuel System', _CAT_PROPULSION),
-    ('aircraft:propulsion:total_thrust_reversers_mass',
-     'Thrust Reversers', _CAT_PROPULSION),
-    ('aircraft:propulsion:total_engine_controls_mass',
-     'Engine Controls', _CAT_PROPULSION),
-    ('aircraft:propulsion:total_starter_mass',
-     'Engine Starters', _CAT_PROPULSION),
-    ('aircraft:battery:mass',
-     'Battery', _CAT_PROPULSION),
+    ('aircraft:propulsion:total_engine_mass', 'Engines', _CAT_PROPULSION),
+    ('aircraft:fuel:fuel_system_mass', 'Fuel System', _CAT_PROPULSION),
+    (
+        'aircraft:propulsion:total_thrust_reversers_mass',
+        'Thrust Reversers',
+        _CAT_PROPULSION,
+    ),
+    (
+        'aircraft:propulsion:total_engine_controls_mass',
+        'Engine Controls',
+        _CAT_PROPULSION,
+    ),
+    (
+        'aircraft:propulsion:total_starter_mass',
+        'Engine Starters',
+        _CAT_PROPULSION,
+    ),
+    ('aircraft:battery:mass', 'Battery', _CAT_PROPULSION),
     # --- Systems ---
-    ('aircraft:furnishings:mass',
-     'Furnishings', _CAT_SYSTEMS),
-    ('aircraft:wing:surface_control_mass',
-     'Surface Controls', _CAT_SYSTEMS),
-    ('aircraft:electrical:mass',
-     'Electrical', _CAT_SYSTEMS),
-    ('aircraft:avionics:mass',
-     'Avionics', _CAT_SYSTEMS),
-    ('aircraft:air_conditioning:mass',
-     'Air Conditioning', _CAT_SYSTEMS),
-    ('aircraft:apu:mass',
-     'APU', _CAT_SYSTEMS),
-    ('aircraft:instruments:mass',
-     'Instruments', _CAT_SYSTEMS),
-    ('aircraft:hydraulics:mass',
-     'Hydraulics', _CAT_SYSTEMS),
-    ('aircraft:anti_icing:mass',
-     'Anti-Icing', _CAT_SYSTEMS),
+    ('aircraft:furnishings:mass', 'Furnishings', _CAT_SYSTEMS),
+    ('aircraft:wing:surface_control_mass', 'Surface Controls', _CAT_SYSTEMS),
+    ('aircraft:electrical:mass', 'Electrical', _CAT_SYSTEMS),
+    ('aircraft:avionics:mass', 'Avionics', _CAT_SYSTEMS),
+    ('aircraft:air_conditioning:mass', 'Air Conditioning', _CAT_SYSTEMS),
+    ('aircraft:apu:mass', 'APU', _CAT_SYSTEMS),
+    ('aircraft:instruments:mass', 'Instruments', _CAT_SYSTEMS),
+    ('aircraft:hydraulics:mass', 'Hydraulics', _CAT_SYSTEMS),
+    ('aircraft:anti_icing:mass', 'Anti-Icing', _CAT_SYSTEMS),
     # --- Margin ---
-    ('aircraft:design:empty_mass_margin',
-     'Empty Mass Margin', _CAT_MARGIN),
+    ('aircraft:design:empty_mass_margin', 'Empty Mass Margin', _CAT_MARGIN),
 ]
 
 _GROSS_MASS_PROM = 'aircraft:design:gross_mass'
 
 _CATEGORY_COLOR: dict[str, str] = {
-    _CAT_FUEL:      '#E8871A',
-    _CAT_PAYLOAD:   '#2E9E4F',
-    _CAT_CREW:      '#1A9E8E',
+    _CAT_FUEL: '#E8871A',
+    _CAT_PAYLOAD: '#2E9E4F',
+    _CAT_CREW: '#1A9E8E',
     _CAT_STRUCTURE: '#2060C8',
-    _CAT_PROPULSION:'#C82020',
-    _CAT_SYSTEMS:   '#8030B0',
-    _CAT_MARGIN:    '#6E8090',
+    _CAT_PROPULSION: '#C82020',
+    _CAT_SYSTEMS: '#8030B0',
+    _CAT_MARGIN: '#6E8090',
 }
 
 
 _MAX_BLEND = 0.65
-_BAR_SPACING = 1.6   # multiplier on y-positions; >1 adds gap between bars
+_BAR_SPACING = 0.8  # multiplier on y-positions for single plots
+_PAIR_BAR_SPACING = 1.0  # multiplier on y-positions for comparison plots
 
 
 def _apply_blend(hex_color: str, blend: float) -> tuple:
@@ -159,6 +151,7 @@ def _apply_blend(hex_color: str, blend: float) -> tuple:
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
+
 
 def _decompress_blob(blob) -> dict:
     if blob is None:
@@ -177,7 +170,8 @@ def _scalar(value) -> float:
 def load_mass_data(db_path: str) -> dict:
     """Read mass variables from the last solved case in *db_path*.
 
-    Returns:
+    Returns
+    -------
         A dict with:
           - 'gross_mass': float in lbm
           - 'entries': list of (label, category, mass_lbm) tuples,
@@ -236,6 +230,7 @@ def load_mass_data(db_path: str) -> dict:
 # Chart data helpers
 # ---------------------------------------------------------------------------
 
+
 def _label_for_path(path: str) -> str:
     """Return a short display label derived from the database path."""
     p = Path(path)
@@ -268,7 +263,7 @@ def _assign_colors(
     for _, cat, mass in entries:
         ranked = cat_sorted[cat]
         n = len(ranked)
-        rank = ranked.index(mass)          # 0 = heaviest → darkest
+        rank = ranked.index(mass)  # 0 = heaviest → darkest
         blend = 0.0 if n == 1 else rank / (n - 1) * _MAX_BLEND
         base = _CATEGORY_COLOR.get(cat, '#808080')
         colors.append(_apply_blend(base, blend))
@@ -284,6 +279,7 @@ def _sorted_entries(
 # ---------------------------------------------------------------------------
 # Single-database plot
 # ---------------------------------------------------------------------------
+
 
 def _plot_single(
     ax: plt.Axes,
@@ -309,7 +305,8 @@ def _plot_single(
     y_pos = np.arange(n) * spacing
 
     bars = ax.barh(
-        y_pos, fractions,
+        y_pos,
+        fractions,
         height=bar_height,
         color=colors,
         edgecolor='white',
@@ -323,7 +320,10 @@ def _plot_single(
             bar.get_width() + 0.0015,
             bar.get_y() + bar.get_height() / 2,
             f'{frac * 100:.1f}%  ({mass:,.0f} lbm)',
-            va='center', ha='left', fontsize=annot_fs, color='#2a2a2a',
+            va='center',
+            ha='left',
+            fontsize=annot_fs,
+            color='#2a2a2a',
         )
 
     ax.set_yticks(y_pos)
@@ -342,13 +342,21 @@ def _plot_single(
     handles = []
     for cat in categories:
         if cat not in seen:
-            handles.append(mpatches.Patch(
-                facecolor=_CATEGORY_COLOR[cat], label=cat, edgecolor='white',
-            ))
+            handles.append(
+                mpatches.Patch(
+                    facecolor=_CATEGORY_COLOR[cat],
+                    label=cat,
+                    edgecolor='white',
+                )
+            )
             seen.add(cat)
-    ax.legend(handles=handles, loc='lower right',
-              fontsize=8.5 * legend_font_scale,
-              framealpha=0.85, edgecolor='#cccccc')
+    ax.legend(
+        handles=handles,
+        loc='lower right',
+        fontsize=8.5 * legend_font_scale,
+        framealpha=0.85,
+        edgecolor='#cccccc',
+    )
 
     return max_frac
 
@@ -357,10 +365,13 @@ def _plot_single(
 # Two-database comparison plot
 # ---------------------------------------------------------------------------
 
+
 def _plot_comparison(
     ax: plt.Axes,
-    data_a: dict, label_a: str,
-    data_b: dict, label_b: str,
+    data_a: dict,
+    label_a: str,
+    data_b: dict,
+    label_b: str,
     *,
     bar_scale: float = 1.0,
     spacing_scale: float = 1.0,
@@ -377,8 +388,7 @@ def _plot_comparison(
     entry_map_b = {lbl: (cat, mass) for lbl, cat, mass in data_b['entries']}
 
     all_labels = [
-        lbl for lbl in catalog_order
-        if lbl in entry_map_a or lbl in entry_map_b
+        lbl for lbl in catalog_order if lbl in entry_map_a or lbl in entry_map_b
     ]
 
     # Sort by the larger of the two values
@@ -392,7 +402,7 @@ def _plot_comparison(
     n = len(all_labels)
     offset = 0.22 * pair_spacing_scale
     bar_height = 0.38 * bar_scale
-    spacing = _BAR_SPACING * spacing_scale
+    spacing = _PAIR_BAR_SPACING * spacing_scale
     y_pos = np.arange(n) * spacing
 
     colors_a: list[tuple] = []
@@ -419,11 +429,13 @@ def _plot_comparison(
         colors_a.append(base_color)
         # DB-B: lighten further for visual distinction
         r, g, b = base_color
-        colors_b.append((
-            r + (1 - r) * 0.30,
-            g + (1 - g) * 0.30,
-            b + (1 - b) * 0.30,
-        ))
+        colors_b.append(
+            (
+                r + (1 - r) * 0.30,
+                g + (1 - g) * 0.30,
+                b + (1 - b) * 0.30,
+            )
+        )
         mass_a = entry_map_a.get(lbl, (None, 0.0))[1]
         mass_b = entry_map_b.get(lbl, (None, 0.0))[1]
         fracs_a.append(mass_a / gross_a)
@@ -433,13 +445,22 @@ def _plot_comparison(
 
     # Draw bars: DB-A above centre, DB-B below
     bars_a = ax.barh(
-        y_pos + offset, fracs_a, height=bar_height,
-        color=colors_a, edgecolor='white', linewidth=0.6,
+        y_pos + offset,
+        fracs_a,
+        height=bar_height,
+        color=colors_a,
+        edgecolor='white',
+        linewidth=0.6,
     )
     bars_b = ax.barh(
-        y_pos - offset, fracs_b, height=bar_height,
-        color=colors_b, edgecolor='white', linewidth=0.6,
-        hatch='//', alpha=0.95,
+        y_pos - offset,
+        fracs_b,
+        height=bar_height,
+        color=colors_b,
+        edgecolor='white',
+        linewidth=0.6,
+        hatch='//',
+        alpha=0.95,
     )
     ax.invert_yaxis()
 
@@ -451,7 +472,10 @@ def _plot_comparison(
                 bar.get_width() + 0.0012,
                 bar.get_y() + bar.get_height() / 2,
                 f'{frac * 100:.1f}%  ({mass:,.0f})',
-                va='center', ha='left', fontsize=annot_fs, color='#222222',
+                va='center',
+                ha='left',
+                fontsize=annot_fs,
+                color='#222222',
             )
     for bar, frac, mass in zip(bars_b, fracs_b, masses_b):
         if mass > 0:
@@ -459,7 +483,10 @@ def _plot_comparison(
                 bar.get_width() + 0.0012,
                 bar.get_y() + bar.get_height() / 2,
                 f'{frac * 100:.1f}%  ({mass:,.0f})',
-                va='center', ha='left', fontsize=annot_fs, color='#444444',
+                va='center',
+                ha='left',
+                fontsize=annot_fs,
+                color='#444444',
             )
 
     ax.set_yticks(y_pos)
@@ -478,20 +505,27 @@ def _plot_comparison(
     seen: set[str] = set()
     for cat in categories:
         if cat not in seen:
-            cat_handles.append(mpatches.Patch(
-                facecolor=_CATEGORY_COLOR[cat], label=cat, edgecolor='white',
-            ))
+            cat_handles.append(
+                mpatches.Patch(
+                    facecolor=_CATEGORY_COLOR[cat],
+                    label=cat,
+                    edgecolor='white',
+                )
+            )
             seen.add(cat)
 
     db_handles = [
         mpatches.Patch(facecolor='#aaaaaa', label=label_a, edgecolor='white'),
-        mpatches.Patch(facecolor='#cccccc', label=label_b,
-                       edgecolor='white', hatch='//'),
+        mpatches.Patch(
+            facecolor='#cccccc', label=label_b, edgecolor='white', hatch='//'
+        ),
     ]
     ax.legend(
         handles=cat_handles + [mpatches.Patch(visible=False)] + db_handles,
-        loc='lower right', fontsize=8.0 * legend_font_scale,
-        framealpha=0.88, edgecolor='#cccccc',
+        loc='lower right',
+        fontsize=8.0 * legend_font_scale,
+        framealpha=0.88,
+        edgecolor='#cccccc',
     )
 
     return max_frac
@@ -500,6 +534,7 @@ def _plot_comparison(
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 def plot_dashboard(
     db_paths: list[str],
@@ -547,13 +582,15 @@ def plot_dashboard(
         ax.xaxis.set_major_formatter(
             mticker.PercentFormatter(xmax=1.0, decimals=0)
         )
-        ax.set_xlabel('Fraction of Gross Mass',
-                      fontsize=10 * title_font_scale, labelpad=6)
+        ax.set_xlabel(
+            'Fraction of Gross Mass', fontsize=10 * title_font_scale, labelpad=6
+        )
         db_name = Path(db_paths[0]).name
         fig.suptitle(
-            f'Mass Fractions — {db_name}\n'
-            f'Gross Mass: {gross:,.0f} lbm',
-            fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
+            f'Mass Fractions — {db_name}\nGross Mass: {gross:,.0f} lbm',
+            fontsize=12 * title_font_scale,
+            fontweight='bold',
+            y=0.99,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
 
@@ -563,31 +600,39 @@ def plot_dashboard(
         label_a = _label_for_path(db_paths[0])
         label_b = _label_for_path(db_paths[1])
 
-        n_items = len({
-            lbl
-            for lbl, _, _ in data_a['entries'] + data_b['entries']
-        })
-        fig_height = max(7, n_items * 0.62 * _BAR_SPACING * spacing_scale + 2.5)
+        n_items = len(
+            {lbl for lbl, _, _ in data_a['entries'] + data_b['entries']}
+        )
+        fig_height = max(
+            7, n_items * 0.62 * _PAIR_BAR_SPACING * spacing_scale + 2.5
+        )
         fig, ax = plt.subplots(figsize=(13, fig_height))
         fig.patch.set_facecolor('#f5f7fa')
         ax.set_facecolor('#f5f7fa')
         _plot_comparison(
-            ax, data_a, label_a, data_b, label_b,
+            ax,
+            data_a,
+            label_a,
+            data_b,
+            label_b,
             **shared_kw,
             pair_spacing_scale=pair_spacing_scale,
         )
         ax.xaxis.set_major_formatter(
             mticker.PercentFormatter(xmax=1.0, decimals=0)
         )
-        ax.set_xlabel('Fraction of Gross Mass',
-                      fontsize=10 * title_font_scale, labelpad=6)
+        ax.set_xlabel(
+            'Fraction of Gross Mass', fontsize=10 * title_font_scale, labelpad=6
+        )
         gross_a = data_a['gross_mass']
         gross_b = data_b['gross_mass']
         fig.suptitle(
             f'Mass Fraction Comparison\n'
             f'{label_a}: {gross_a:,.0f} lbm     '
             f'{label_b}: {gross_b:,.0f} lbm',
-            fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
+            fontsize=12 * title_font_scale,
+            fontweight='bold',
+            y=0.99,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
 
@@ -597,6 +642,7 @@ def plot_dashboard(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     """Entry point for the mass fraction dashboard CLI."""
@@ -640,7 +686,7 @@ def main():
         default=1.0,
         metavar='S',
         help='Scale multiplier for spacing between the two solution bars '
-             'of the same mass item (comparison mode only)',
+        'of the same mass item (comparison mode only)',
     )
     parser.add_argument(
         '--label-font-scale',
