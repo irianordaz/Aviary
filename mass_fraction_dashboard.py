@@ -39,21 +39,15 @@ _CAT_SYSTEMS = 'Systems'
 _CAT_MARGIN = 'Margin'
 
 _VARIABLE_CATALOG: list[tuple[str, str, str]] = [
-    # --- Fuel (individual mission segments, not the block_fuel aggregate) ---
+    # --- Fuel ---
+    # mission:fuel IS the block fuel total; taxi/takeoff/reserve are sub-segments
+    # already included in it, so listing them separately would double-count.
     ('mission:fuel',
-     'Mission Fuel Burned', _CAT_FUEL),
-    ('mission:taxi:fuel_taxi_out',
-     'Taxi Out Fuel', _CAT_FUEL),
-    ('mission:takeoff:fuel',
-     'Takeoff Fuel', _CAT_FUEL),
-    ('mission:taxi:fuel_taxi_in',
-     'Taxi In Fuel', _CAT_FUEL),
+     'Mission Fuel (Block)', _CAT_FUEL),
     ('mission:reserve_fuel',
      'Reserve Fuel', _CAT_FUEL),
     ('mission:reserve_fuel_additional',
      'Additional Reserve', _CAT_FUEL),
-    ('aircraft:fuel:unusable_fuel_mass',
-     'Unusable Fuel', _CAT_FUEL),
     # --- Payload ---
     ('aircraft:crew_and_payload:passenger_mass_total',
      'Passengers', _CAT_PAYLOAD),
@@ -66,6 +60,7 @@ _VARIABLE_CATALOG: list[tuple[str, str, str]] = [
     ('aircraft:crew_and_payload:wing_cargo',
      'Wing Cargo', _CAT_PAYLOAD),
     # --- Crew & Service ---
+    # unusable_fuel and engine_oil are part of Aviary's useful_load, not payload
     ('aircraft:crew_and_payload:flight_crew_mass',
      'Flight Crew', _CAT_CREW),
     ('aircraft:crew_and_payload:cabin_crew_mass',
@@ -74,6 +69,10 @@ _VARIABLE_CATALOG: list[tuple[str, str, str]] = [
      'Passenger Service', _CAT_CREW),
     ('aircraft:crew_and_payload:cargo_container_mass',
      'Cargo Containers', _CAT_CREW),
+    ('aircraft:fuel:unusable_fuel_mass',
+     'Unusable Fuel', _CAT_CREW),
+    ('aircraft:propulsion:total_engine_oil_mass',
+     'Engine Oil', _CAT_CREW),
     # --- Structure ---
     ('aircraft:fuselage:mass',
      'Fuselage', _CAT_STRUCTURE),
