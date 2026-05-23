@@ -112,20 +112,24 @@ if __name__ == '__main__':
     prob.load_inputs(csv_path, phase_info)
 
     # 3. Register the LNG tank external subsystem.
-    # ullage_T_init=120 K: the LNGTankThermals default of 111 K sits
-    # below the ~116.66 K saturation temperature of methane at the
-    # 1.5 bar default ullage pressure. At a sub-saturation temperature
-    # CoolProp returns the *liquid* density for the ullage (giving an
-    # absurd ~1200 kg of "gas"), and the saturated-property lookups
-    # then fall outside CoolProp's valid two-phase range, raising
+    # ullage_T_init=117 K and liquid_T_init=117 K: the LNGTankThermals
+    # defaults (111 K / 111 K) sit below the ~116.66 K saturation
+    # temperature of methane at the 1.5 bar default ullage pressure.
+    # At sub-saturation temperatures CoolProp returns liquid density
+    # for the ullage (~1200 kg of "gas"), and saturated-property
+    # lookups fall outside CoolProp's valid two-phase range, raising
     # "max() iterable argument is empty" and failing the boil-off IVP
-    # initial-guess solver. 120 K keeps the ullage a proper vapor.
+    # initial-guess solver. 117 K keeps both ullage and liquid in the
+    # proper two-phase region.
     lng_builder = CryoTankBuilder(
         name='lng_tank',
         meta_data=ExtendedMetaData,
         tank_vars=_LNG_TANK_VARS,
         thermals_class=LNGTankThermals,
-        thermals_kwargs={'ullage_T_init': 120.0},
+        thermals_kwargs={
+            'ullage_T_init': 117.0,
+            'liquid_T_init': 117.0,
+        },
         t_env_default=300.0,
     )
     prob.load_external_subsystems([lng_builder])
