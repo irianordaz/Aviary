@@ -1,18 +1,19 @@
-"""Debug dashboard for Aviary / OpenMDAO SQLite case databases.
+"""Mass fraction dashboard for Aviary / OpenMDAO SQLite case databases.
 
-Reads the last solved case and renders a side-by-side figure:
-
-  Left  – horizontal bar chart of mass fractions (each component mass
-           divided by aircraft gross mass), sorted largest-to-smallest.
-  Right – altitude vs time for each trajectory phase found in the database.
+Reads the last solved case and renders a horizontal bar chart of mass
+fractions (each component mass divided by aircraft gross mass). Bars are
+sorted largest-to-smallest from top to bottom. Each category of component
+is given a distinct colour.
 
 One database → single chart.
-Two databases → grouped comparison: paired bars on the left panel, and
-                both solutions overlaid per phase on the right panel.
+Two databases → grouped comparison chart with one pair of bars per item.
+
+Add trajectory phases on the right by using --show-trajectory.
 
 Usage:
-    python debug_dashboard.py path/to/problem_history.db
-    python debug_dashboard.py path/to/db_a.db path/to/db_b.db
+    python mass_fraction.py path/to/problem_history.db
+    python mass_fraction.py path/to/db_a.db path/to/db_b.db
+    python mass_fraction.py path/to/db_a.db path/to/db_b.db --show-trajectory
 """
 
 import argparse
@@ -22,7 +23,6 @@ import sqlite3
 import zlib
 from pathlib import Path
 
-import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -30,7 +30,7 @@ import numpy as np
 from matplotlib.gridspec import GridSpecFromSubplotSpec
 
 # ---------------------------------------------------------------------------
-# Mass-fraction variable catalog: (promoted_name, display_label, category)
+# Variable catalog: (promoted_name, display_label, category)
 # Entries with zero or missing values are dropped automatically.
 # ---------------------------------------------------------------------------
 
@@ -115,7 +115,6 @@ _PHASE_PALETTE = [
 ]
 
 # Timeseries discovery: traj.phases.{phase}.timeseries.{var}
-# Also support traj.{phase}.timeseries.{var} (older Dymos style)
 _TRAJ_VAR_RE = re.compile(r'traj\.(?:phases\.)?([^.]+)\.timeseries\.(.+)')
 
 _ALT_TO_FT: dict[str, float] = {
@@ -131,19 +130,6 @@ _TIME_TO_MIN: dict[str, float] = {
     'hr': 60.0,
     'hour': 60.0,
 }
-
-
-# ---------------------------------------------------------------------------
-# Colour helpers
-# ---------------------------------------------------------------------------
-
-
-def _apply_blend(hex_color: str, blend: float) -> tuple:
-    """Blend *hex_color* toward white by *blend* ∈ [0, 1] (0 = base color)."""
-    r = int(hex_color[1:3], 16) / 255
-    g = int(hex_color[3:5], 16) / 255
-    b = int(hex_color[5:7], 16) / 255
-    return (r + (1 - r) * blend, g + (1 - g) * blend, b + (1 - b) * blend)
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +211,6 @@ def load_mass_data(db_path: str) -> dict:
 def load_trajectory_data(db_path: str) -> dict:
     """Load altitude vs time timeseries per phase from *db_path*.
 
-    Discovers phases at runtime by scanning variable names for the pattern
-    ``traj.phases.{phase}.timeseries.*``.
-
     Returns
     -------
         dict mapping phase_name → {'time_min': ndarray, 'altitude_ft': ndarray}.
@@ -260,7 +243,6 @@ def load_trajectory_data(db_path: str) -> dict:
     if not outputs:
         return {}
 
-    # Discover {phase: {alt_key, time_key}} from variable names
     phase_keys: dict[str, dict[str, str]] = {}
     for abs_name in outputs:
         m = _TRAJ_VAR_RE.match(abs_name)
@@ -297,7 +279,7 @@ def load_trajectory_data(db_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Mass-fraction chart helpers
+# Chart data helpers
 # ---------------------------------------------------------------------------
 
 
@@ -305,7 +287,10 @@ def _label_for_path(path: str) -> str:
     """Return a short display label derived from the database path."""
     p = Path(path)
     folder = p.parent.name
-    return folder if folder not in ('.', '') else p.stem
+    label = folder if folder not in ('.', '') else p.stem
+    if label.endswith('_out'):
+        label = label[:-4]
+    return label
 
 
 def _assign_colors(entries: list[tuple[str, str, float]]) -> list[tuple]:
@@ -329,6 +314,26 @@ def _assign_colors(entries: list[tuple[str, str, float]]) -> list[tuple]:
 
 def _sorted_entries(entries: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
     return sorted(entries, key=lambda x: x[2], reverse=True)
+
+
+def _apply_blend(hex_color: str, blend: float) -> tuple:
+    """Blend *hex_color* toward white by *blend* ∈ [0, 1] (0 = base color)."""
+    r = int(hex_color[1:3], 16) / 255
+    g = int(hex_color[3:5], 16) / 255
+    b = int(hex_color[5:7], 16) / 255
+    return (r + (1 - r) * blend, g + (1 - g) * blend, b + (1 - b) * blend)
+
+
+def _sorted_phases(traj_primary: dict, traj_compare: dict | None) -> list[str]:
+    """Return all phase names sorted by start time."""
+    all_phases = set(traj_primary) | (set(traj_compare) if traj_compare else set())
+    return sorted(
+        all_phases,
+        key=lambda p: float(
+            (traj_primary.get(p) or (traj_compare or {}).get(p, {}))
+            .get('time_min', [np.inf])[0]
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +425,9 @@ def _plot_comparison(
     gross_a = data_a['gross_mass']
     gross_b = data_b['gross_mass']
 
+    # Use the larger gross mass as the common denominator for consistent horizontal scaling
+    shared_gross_mass = max(gross_a, gross_b)
+
     catalog_order = [label for _, label, _ in _VARIABLE_CATALOG]
     entry_map_a = {lbl: (cat, mass) for lbl, cat, mass in data_a['entries']}
     entry_map_b = {lbl: (cat, mass) for lbl, cat, mass in data_b['entries']}
@@ -460,8 +468,9 @@ def _plot_comparison(
         colors_b.append((r + (1 - r) * 0.30, g + (1 - g) * 0.30, b + (1 - b) * 0.30))
         mass_a = entry_map_a.get(lbl, (None, 0.0))[1]
         mass_b = entry_map_b.get(lbl, (None, 0.0))[1]
-        fracs_a.append(mass_a / gross_a)
-        fracs_b.append(mass_b / gross_b)
+        # Use shared gross mass for consistent horizontal scale
+        fracs_a.append(mass_a / shared_gross_mass)
+        fracs_b.append(mass_b / shared_gross_mass)
         masses_a.append(mass_a)
         masses_b.append(mass_b)
 
@@ -529,18 +538,6 @@ def _plot_comparison(
 # ---------------------------------------------------------------------------
 
 
-def _sorted_phases(traj_primary: dict, traj_compare: dict | None) -> list[str]:
-    """Return all phase names sorted by start time."""
-    all_phases = set(traj_primary) | (set(traj_compare) if traj_compare else set())
-    return sorted(
-        all_phases,
-        key=lambda p: float(
-            (traj_primary.get(p) or (traj_compare or {}).get(p, {}))
-            .get('time_min', [np.inf])[0]
-        ),
-    )
-
-
 def _plot_altitude_panels(
     axes: list[plt.Axes],
     phases: list[str],
@@ -552,18 +549,14 @@ def _plot_altitude_panels(
     label_font_scale: float = 1.0,
     legend_font_scale: float = 1.0,
 ):
-    """Plot one altitude-vs-time subplot per trajectory phase, stacked vertically.
-
-    *axes* must have the same length as *phases* (or length 1 for the
-    "no data" fallback).
-    """
+    """Plot one altitude-vs-time subplot per trajectory phase, stacked vertically."""
     if not phases:
         ax = axes[0]
         ax.text(0.5, 0.5, 'No trajectory data found',
                 ha='center', va='center', transform=ax.transAxes,
                 fontsize=10, color='#888888')
-        ax.set_xlabel('Time [min]', fontsize=9 * label_font_scale)
-        ax.set_ylabel('Altitude [ft]', fontsize=9 * label_font_scale)
+        ax.set_xlabel('Time (min)', fontsize=9 * label_font_scale)
+        ax.set_ylabel('Altitude (ft)', fontsize=9 * label_font_scale)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         return
@@ -590,16 +583,16 @@ def _plot_altitude_panels(
 
         ax.set_title(phase, fontsize=fs_label, pad=3, loc='left',
                      color=color, fontweight='bold')
-        ax.set_ylabel('Altitude [ft]', fontsize=fs_label)
-        ax.set_xlabel('Time [min]', fontsize=fs_label)
+        ax.set_ylabel('Altitude (ft)', fontsize=fs_label)
+        ax.set_xlabel('Time (min)', fontsize=fs_label)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
         ax.tick_params(labelsize=fs_label * 0.9)
         ax.grid(linestyle='--', linewidth=0.5, alpha=0.55)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-        # Comparison legend only on the first subplot
-        if traj_compare and i == 0:
+        # Add legend for comparison plots
+        if traj_compare:
             ax.legend(fontsize=fs_legend, framealpha=0.85,
                       edgecolor='#cccccc', loc='best')
 
@@ -612,6 +605,7 @@ def _plot_altitude_panels(
 def plot_dashboard(
     db_paths: list[str],
     *,
+    show_trajectory: bool = False,
     bar_scale: float = 1.0,
     spacing_scale: float = 1.0,
     pair_spacing_scale: float = 1.0,
@@ -619,10 +613,11 @@ def plot_dashboard(
     label_font_scale: float = 1.0,
     legend_font_scale: float = 1.0,
 ):
-    """Load data and display the debug dashboard.
+    """Load data and display the mass fraction dashboard.
 
     Args:
         db_paths: one or two paths to SQLite case databases.
+        show_trajectory: if True, show trajectory phase altitude plots on the right.
         bar_scale: multiplier for bar height (default 1.0).
         spacing_scale: multiplier for vertical spacing between mass items.
         pair_spacing_scale: multiplier for spacing between the two solution
@@ -640,22 +635,32 @@ def plot_dashboard(
 
     if len(db_paths) == 1:
         data = load_mass_data(db_paths[0])
-        traj = load_trajectory_data(db_paths[0])
+        traj = load_trajectory_data(db_paths[0]) if show_trajectory else None
         gross = data['gross_mass']
         n = len(data['entries'])
-        phases = _sorted_phases(traj, None)
+        phases = _sorted_phases(traj, None) if traj else []
         n_alt = max(len(phases), 1)
-        fig_height = max(6, n * 0.50 * _BAR_SPACING * spacing_scale + 2.2)
 
-        fig = plt.figure(figsize=(22, fig_height), layout='constrained')
+        if show_trajectory:
+            fig_width = 22
+            width_ratios = [1.5, 1]
+            fig_height = max(6, n * 0.50 * _BAR_SPACING * spacing_scale + 2.2)
+        else:
+            fig_width = 12
+            width_ratios = [1]
+            fig_height = max(6, n * 0.50 * _BAR_SPACING * spacing_scale + 2.2)
+
+        fig = plt.figure(figsize=(fig_width, fig_height), layout='constrained')
         fig.patch.set_facecolor('#f5f7fa')
-        gs_main = fig.add_gridspec(1, 2, width_ratios=[1.5, 1])
+        gs_main = fig.add_gridspec(1, 1 + int(show_trajectory), width_ratios=width_ratios)
         ax_mass = fig.add_subplot(gs_main[0])
         ax_mass.set_facecolor('#f5f7fa')
-        gs_alt = GridSpecFromSubplotSpec(n_alt, 1, subplot_spec=gs_main[1], hspace=0.65)
-        ax_alts = [fig.add_subplot(gs_alt[i]) for i in range(n_alt)]
-        for ax in ax_alts:
-            ax.set_facecolor('#f5f7fa')
+
+        if show_trajectory:
+            gs_alt = GridSpecFromSubplotSpec(n_alt, 1, subplot_spec=gs_main[1], hspace=0.65)
+            ax_alts = [fig.add_subplot(gs_alt[i]) for i in range(n_alt)]
+            for ax in ax_alts:
+                ax.set_facecolor('#f5f7fa')
 
         _plot_single(ax_mass, data, gross, **shared_kw)
         ax_mass.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
@@ -664,38 +669,51 @@ def plot_dashboard(
         )
         ax_mass.set_title('Mass Fractions', fontsize=10 * title_font_scale, pad=8)
 
-        _plot_altitude_panels(ax_alts, phases, traj,
-                              label_font_scale=label_font_scale,
-                              legend_font_scale=legend_font_scale)
+        if show_trajectory and traj:
+            _plot_altitude_panels(
+                ax_alts, phases, traj,
+                label_font_scale=label_font_scale,
+                legend_font_scale=legend_font_scale,
+            )
 
         db_name = Path(db_paths[0]).name
         fig.suptitle(
-            f'Debug Dashboard — {db_name}\nGross Mass: {gross:,.0f} lbm',
+            f'Mass Fractions — {db_name}\nGross Mass: {gross:,.0f} lbm',
             fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
         )
 
     else:
         data_a = load_mass_data(db_paths[0])
         data_b = load_mass_data(db_paths[1])
-        traj_a = load_trajectory_data(db_paths[0])
-        traj_b = load_trajectory_data(db_paths[1])
+        traj_a = load_trajectory_data(db_paths[0]) if show_trajectory else None
+        traj_b = load_trajectory_data(db_paths[1]) if show_trajectory else None
         label_a = _label_for_path(db_paths[0])
         label_b = _label_for_path(db_paths[1])
 
-        phases = _sorted_phases(traj_a, traj_b)
-        n_alt = max(len(phases), 1)
         n_items = len({lbl for lbl, _, _ in data_a['entries'] + data_b['entries']})
-        fig_height = max(7, n_items * 0.62 * _PAIR_BAR_SPACING * spacing_scale + 2.5)
+        phases = _sorted_phases(traj_a, traj_b) if traj_a or traj_b else []
+        n_alt = max(len(phases), 1)
 
-        fig = plt.figure(figsize=(24, fig_height))
+        if show_trajectory:
+            fig_width = 24
+            width_ratios = [1.5, 1]
+            fig_height = max(7, n_items * 0.62 * _PAIR_BAR_SPACING * spacing_scale + 2.5)
+        else:
+            fig_width = 13
+            width_ratios = [1]
+            fig_height = max(7, n_items * 0.62 * _PAIR_BAR_SPACING * spacing_scale + 2.5)
+
+        fig = plt.figure(figsize=(fig_width, fig_height))
         fig.patch.set_facecolor('#f5f7fa')
-        gs_main = fig.add_gridspec(1, 2, width_ratios=[1.5, 1])
+        gs_main = fig.add_gridspec(1, 1 + int(show_trajectory), width_ratios=width_ratios)
         ax_mass = fig.add_subplot(gs_main[0])
         ax_mass.set_facecolor('#f5f7fa')
-        gs_alt = GridSpecFromSubplotSpec(n_alt, 1, subplot_spec=gs_main[1], hspace=0.65)
-        ax_alts = [fig.add_subplot(gs_alt[i]) for i in range(n_alt)]
-        for ax in ax_alts:
-            ax.set_facecolor('#f5f7fa')
+
+        if show_trajectory and (traj_a or traj_b):
+            gs_alt = GridSpecFromSubplotSpec(n_alt, 1, subplot_spec=gs_main[1], hspace=0.65)
+            ax_alts = [fig.add_subplot(gs_alt[i]) for i in range(n_alt)]
+            for ax in ax_alts:
+                ax.set_facecolor('#f5f7fa')
 
         _plot_comparison(
             ax_mass, data_a, label_a, data_b, label_b,
@@ -703,21 +721,22 @@ def plot_dashboard(
         )
         ax_mass.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
         ax_mass.set_xlabel(
-            'Fraction of Gross Mass', fontsize=10 * title_font_scale, labelpad=6
+            'Fraction of Gross Mass (shared scale)', fontsize=10 * title_font_scale, labelpad=6
         )
         ax_mass.set_title('Mass Fractions', fontsize=10 * title_font_scale, pad=8)
 
-        _plot_altitude_panels(
-            ax_alts, phases, traj_a, traj_b,
-            label_primary=label_a, label_compare=label_b,
-            label_font_scale=label_font_scale,
-            legend_font_scale=legend_font_scale,
-        )
+        if show_trajectory and (traj_a or traj_b):
+            _plot_altitude_panels(
+                ax_alts, phases, traj_a, traj_b,
+                label_primary=label_a, label_compare=label_b,
+                label_font_scale=label_font_scale,
+                legend_font_scale=legend_font_scale,
+            )
 
         gross_a = data_a['gross_mass']
         gross_b = data_b['gross_mass']
         fig.suptitle(
-            f'Debug Dashboard — Comparison\n'
+            f'Mass Fraction Comparison\n'
             f'{label_a}: {gross_a:,.0f} lbm     {label_b}: {gross_b:,.0f} lbm',
             fontsize=12 * title_font_scale, fontweight='bold', y=0.99,
         )
@@ -731,18 +750,22 @@ def plot_dashboard(
 
 
 def main():
-    """Entry point for the debug dashboard CLI."""
+    """Entry point for the mass fraction dashboard CLI."""
     parser = argparse.ArgumentParser(
         description=(
-            'Debug dashboard for Aviary / OpenMDAO SQLite databases. '
-            'Shows mass fractions (left) and altitude profile (right). '
-            'Pass one database for a single chart or two for a comparison.'
+            'Mass fraction dashboard for Aviary / OpenMDAO SQLite databases. '
+            'Pass one database for a single chart or two for a comparison. '
+            'Use --show-trajectory to display trajectory phase altitude plots.'
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         'database', nargs='+', metavar='DB',
         help='Path(s) to SQLite database file(s) (1 or 2)',
+    )
+    parser.add_argument(
+        '--show-trajectory', action='store_true',
+        help='Show trajectory phase altitude plots on the right side',
     )
     parser.add_argument(
         '--bar-scale', type=float, default=1.0, metavar='S',
@@ -774,6 +797,7 @@ def main():
         parser.error('At most two database paths are supported.')
     plot_dashboard(
         args.database,
+        show_trajectory=args.show_trajectory,
         bar_scale=args.bar_scale,
         spacing_scale=args.spacing_scale,
         pair_spacing_scale=args.pair_spacing_scale,
