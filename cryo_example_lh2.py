@@ -9,20 +9,16 @@ the mission's climb/cruise/descent fuel-flow trajectory via
 post-mission bus variables.
 """
 
+from hytank.LH2_tank import LH2TankThermals
+
 import aviary.api as av
 from aviary.api import Aircraft as _AviaryAircraft
 from aviary.api import CoreMetaData
 from aviary.core.aviary_problem import AviaryProblem
+from aviary.models.aircraft.advanced_single_aisle.phase_info import phase_info
 from aviary.utils.functions import get_aviary_resource_path
 from aviary.variable_info.variables import Mission
-
-from aviary.models.aircraft.advanced_single_aisle.phase_info import (
-    phase_info,
-)
-
-from hytank.LH2_tank import LH2TankThermals
-
-from cryo_builder import CryoTankBuilder, KG_TO_LBM
+from cryo_builder import KG_TO_LBM, CryoTankBuilder
 
 
 # ── Aviary data-hierarchy extension ───────────────────────────
@@ -95,9 +91,7 @@ _LH2_TANK_VARS = {
     'N_LAYERS': Aircraft.Fuel.LH2Tank.N_LAYERS,
     'VACUUM_GAP': Aircraft.Fuel.LH2Tank.VACUUM_GAP,
     'ENV_DESIGN_PRESSURE': Aircraft.Fuel.LH2Tank.ENV_DESIGN_PRESSURE,
-    'MAX_OPERATING_PRESSURE': (
-        Aircraft.Fuel.LH2Tank.MAX_OPERATING_PRESSURE
-    ),
+    'MAX_OPERATING_PRESSURE': (Aircraft.Fuel.LH2Tank.MAX_OPERATING_PRESSURE),
 }
 
 
@@ -108,8 +102,7 @@ if __name__ == '__main__':
 
     # 2. Load the advanced single aisle aircraft definition
     csv_path = get_aviary_resource_path(
-        'models/aircraft/advanced_single_aisle'
-        '/advanced_single_aisle_FLOPS.csv'
+        'models/aircraft/advanced_single_aisle/advanced_single_aisle_FLOPS.csv'
     )
     prob.load_inputs(csv_path, phase_info)
 
@@ -139,6 +132,19 @@ if __name__ == '__main__':
 
     # 5. Add optimizer, design variables, and objective
     prob.add_driver('IPOPT')
+    prob.driver.opt_settings['max_iter'] = 200
+    # Aviary's default IPOPT setup (mu_init=1e-5, monotone) drives
+    # hard for tol=1e-6, but the computed-aerodynamics gradients have
+    # a mild noise floor (~5e-4 dual infeasibility) at this optimum,
+    # where the descent Mach control rails against its upper bound.
+    # IPOPT then fails the final polish into the restoration phase and
+    # exits "Restoration Failed" despite a feasible, near-optimal
+    # point. Accept that point via acceptable-level termination once
+    # it is feasible (constraint violation < 1e-5) and the optimality
+    # error has plateaued for a few iterations.
+    # prob.driver.opt_settings['acceptable_tol'] = 2e-3
+    # prob.driver.opt_settings['acceptable_iter'] = 5
+    # prob.driver.opt_settings['acceptable_constr_viol_tol'] = 1e-5
     prob.add_design_variables()
     prob.add_objective('fuel_burned')
 
@@ -158,34 +164,45 @@ if __name__ == '__main__':
     prob.set_val(Aircraft.Fuel.LH2Tank.N_LAYERS, 30)
     prob.set_val(Aircraft.Fuel.LH2Tank.VACUUM_GAP, 5, units='cm')
     prob.set_val(
-        Aircraft.Fuel.LH2Tank.ENV_DESIGN_PRESSURE, 1.0, units='bar',
+        Aircraft.Fuel.LH2Tank.ENV_DESIGN_PRESSURE,
+        1.0,
+        units='bar',
     )
     prob.set_val(
-        Aircraft.Fuel.LH2Tank.MAX_OPERATING_PRESSURE, 5.0, units='bar',
+        Aircraft.Fuel.LH2Tank.MAX_OPERATING_PRESSURE,
+        5.0,
+        units='bar',
     )
     # Scale the mission fuel-flow rate seen by HyTank.
     # 1.0 = use mission values as-is; 0.25 = quarter the extraction rate.
     prob.set_val('lh2_tank.assembler.flow_rate_scale', 0.25)
+
+    # Takeoff inputs required by the simplified takeoff group when
+    # phase_info enables ``include_takeoff``. The advanced single
+    # aisle CSV ships ``thrust_takeoff_per_eng = 0`` and omits
+    # ``lift_over_drag`` (whose metadata default is 0). The takeoff
+    # rolling-distance formula divides by lift_over_drag, so a 0 value
+    # yields inf/NaN that poisons the takeoff->climb mach/altitude
+    # connection constraints and aborts IPOPT on the first iteration.
+    # These values match the sibling FLOPS benchmark for this airframe.
+    prob.set_val(Aircraft.Design.THRUST_TAKEOFF_PER_ENG, 28928.1, units='lbf')
+    prob.set_val(Mission.Takeoff.LIFT_OVER_DRAG, 17.354)
 
     # 8. Run the Aviary problem
     prob.run_aviary_problem()
 
     # 9. Print results
     tank_mass_lbm = prob.get_val(
-        Aircraft.Fuel.FUEL_SYSTEM_MASS, units='lbm',
+        Aircraft.Fuel.FUEL_SYSTEM_MASS,
+        units='lbm',
     ).item()
-    print(
-        f'\nLH2 Tank Weight (fuel system mass): '
-        f'{tank_mass_lbm:.2f} lbm'
-    )
-    print(
-        f'LH2 Tank Weight: '
-        f'{tank_mass_lbm / KG_TO_LBM:.2f} kg'
-    )
+    print(f'\nLH2 Tank Weight (fuel system mass): {tank_mass_lbm:.2f} lbm')
+    print(f'LH2 Tank Weight: {tank_mass_lbm / KG_TO_LBM:.2f} kg')
 
     # 10. Post-mission tank state driven by climb/cruise/descent bus.
     duration_s = prob.get_val(
-        'lh2_tank.assembler.mission_duration', units='s',
+        'lh2_tank.assembler.mission_duration',
+        units='s',
     ).item()
     m_dot_liq_kgps = prob.get_val('lh2_tank.m_dot_liq_out', units='kg/s')
     m_liq_kg = prob.get_val('lh2_tank.m_liq', units='kg')
@@ -206,14 +223,6 @@ if __name__ == '__main__':
         f'end={m_liq_kg[-1]:.1f} kg, '
         f'burned={m_liq_kg[0] - m_liq_kg[-1]:.1f} kg'
     )
-    print(
-        f'Ullage pressure: '
-        f'start={P_bar[0]:.2f} bar, '
-        f'end={P_bar[-1]:.2f} bar'
-    )
-    print(
-        f'Fill level: '
-        f'start={fill[0] * 100:.1f}%, '
-        f'end={fill[-1] * 100:.1f}%'
-    )
+    print(f'Ullage pressure: start={P_bar[0]:.2f} bar, end={P_bar[-1]:.2f} bar')
+    print(f'Fill level: start={fill[0] * 100:.1f}%, end={fill[-1] * 100:.1f}%')
     print(Mission.BLOCK_FUEL, prob.get_val(Mission.BLOCK_FUEL))
