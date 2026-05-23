@@ -382,6 +382,9 @@ def _plot_comparison(
     gross_a = data_a['gross_mass']
     gross_b = data_b['gross_mass']
 
+    # Use the larger gross mass as the common denominator for consistent horizontal scaling
+    shared_gross_mass = max(gross_a, gross_b)
+
     # Union of all labels across both DBs, keyed by label → (category, mass_a, mass_b)
     catalog_order = [label for _, label, _ in _VARIABLE_CATALOG]
     entry_map_a = {lbl: (cat, mass) for lbl, cat, mass in data_a['entries']}
@@ -438,8 +441,9 @@ def _plot_comparison(
         )
         mass_a = entry_map_a.get(lbl, (None, 0.0))[1]
         mass_b = entry_map_b.get(lbl, (None, 0.0))[1]
-        fracs_a.append(mass_a / gross_a)
-        fracs_b.append(mass_b / gross_b)
+        # Use shared gross mass for consistent horizontal scale
+        fracs_a.append(mass_a / shared_gross_mass)
+        fracs_b.append(mass_b / shared_gross_mass)
         masses_a.append(mass_a)
         masses_b.append(mass_b)
 
@@ -499,6 +503,8 @@ def _plot_comparison(
 
     max_frac = max(max(fracs_a), max(fracs_b)) if fracs_a else 0.0
     ax.set_xlim(0, max_frac * 1.38)
+
+    return max_frac
 
     # Legend: categories + DB identifiers
     cat_handles = []
@@ -622,7 +628,7 @@ def plot_dashboard(
             mticker.PercentFormatter(xmax=1.0, decimals=0)
         )
         ax.set_xlabel(
-            'Fraction of Gross Mass', fontsize=10 * title_font_scale, labelpad=6
+            'Fraction of Gross Mass (shared scale)', fontsize=10 * title_font_scale, labelpad=6
         )
         gross_a = data_a['gross_mass']
         gross_b = data_b['gross_mass']
