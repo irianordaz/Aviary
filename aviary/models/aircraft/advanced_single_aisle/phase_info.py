@@ -1,9 +1,9 @@
-from aviary.variable_info.variables import Aircraft, Mission
+from aviary.variable_info.variables import Aircraft
 
 # defaults for energy-state based phases
 
 phase_info = {
-    'pre_mission': {'include_takeoff': False, 'optimize_mass': True},
+    'pre_mission': {'include_takeoff': True, 'optimize_mass': True},
     'climb': {
         'subsystem_options': {'aerodynamics': {'method': 'computed'}},
         'user_options': {
@@ -99,31 +99,62 @@ def phase_info_parameterization(phase_info, post_mission_info, aviary_inputs):
         Modified phase_info and post_mission_info that have been changed to match
         the new mission parameters
     """
-
-    alt_cruise = aviary_inputs.get_val(Aircraft.Design.CRUISE_ALTITUDE, units='ft')
+    alt_cruise = aviary_inputs.get_val(
+        Aircraft.Design.CRUISE_ALTITUDE, units='ft'
+    )
     mach_cruise = aviary_inputs.get_val(Aircraft.Design.CRUISE_MACH)
 
     # Range
     old_range_cruise, range_units = post_mission_info['target_range']
-    range_cruise = aviary_inputs.get_val(Aircraft.Design.RANGE, units=range_units)
+    range_cruise = aviary_inputs.get_val(
+        Aircraft.Design.RANGE, units=range_units
+    )
     if range_cruise != old_range_cruise:
-        new_val = post_mission_info['target_range'][0] * range_cruise / old_range_cruise
+        new_val = (
+            post_mission_info['target_range'][0]
+            * range_cruise
+            / old_range_cruise
+        )
         post_mission_info['target_range'] = (new_val, range_units)
 
     # Altitude
     old_alt_cruise = 35000.0
     if alt_cruise != old_alt_cruise:
-        phase_info['climb']['user_options']['altitude_final'] = (alt_cruise, 'ft')
-        phase_info['cruise']['user_options']['altitude_initial'] = (alt_cruise, 'ft')
-        phase_info['cruise']['user_options']['altitude_final'] = (alt_cruise, 'ft')
-        phase_info['descent']['user_options']['altitude_initial'] = (alt_cruise, 'ft')
+        phase_info['climb']['user_options']['altitude_final'] = (
+            alt_cruise,
+            'ft',
+        )
+        phase_info['cruise']['user_options']['altitude_initial'] = (
+            alt_cruise,
+            'ft',
+        )
+        phase_info['cruise']['user_options']['altitude_final'] = (
+            alt_cruise,
+            'ft',
+        )
+        phase_info['descent']['user_options']['altitude_initial'] = (
+            alt_cruise,
+            'ft',
+        )
 
     # Mach
     old_mach_cruise = 0.79
     if mach_cruise != old_mach_cruise:
-        phase_info['climb']['user_options']['mach_final'] = (mach_cruise, 'unitless')
-        phase_info['cruise']['user_options']['mach_initial'] = (mach_cruise, 'unitless')
-        phase_info['cruise']['user_options']['mach_final'] = (mach_cruise, 'unitless')
-        phase_info['descent']['user_options']['mach_initial'] = (mach_cruise, 'unitless')
+        phase_info['climb']['user_options']['mach_final'] = (
+            mach_cruise,
+            'unitless',
+        )
+        phase_info['cruise']['user_options']['mach_initial'] = (
+            mach_cruise,
+            'unitless',
+        )
+        phase_info['cruise']['user_options']['mach_final'] = (
+            mach_cruise,
+            'unitless',
+        )
+        phase_info['descent']['user_options']['mach_initial'] = (
+            mach_cruise,
+            'unitless',
+        )
 
     return phase_info, post_mission_info

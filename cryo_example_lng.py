@@ -14,20 +14,16 @@ at 1 atm (vs ~20 K for LH2); ``LNGTankThermals`` pre-sets initial
 conditions to match.
 """
 
+from hytank.LNG_tank import LNGTankThermals
+
 import aviary.api as av
 from aviary.api import Aircraft as _AviaryAircraft
 from aviary.api import CoreMetaData
 from aviary.core.aviary_problem import AviaryProblem
+from aviary.models.aircraft.advanced_single_aisle.phase_info import phase_info
 from aviary.utils.functions import get_aviary_resource_path
 from aviary.variable_info.variables import Mission
-
-from aviary.models.aircraft.advanced_single_aisle.phase_info import (
-    phase_info,
-)
-
-from hytank.LNG_tank import LNGTankThermals
-
-from cryo_builder import CryoTankBuilder, KG_TO_LBM
+from cryo_builder import KG_TO_LBM, CryoTankBuilder
 
 
 # ── Aviary data-hierarchy extension ───────────────────────────
@@ -100,9 +96,7 @@ _LNG_TANK_VARS = {
     'N_LAYERS': Aircraft.Fuel.LNGTank.N_LAYERS,
     'VACUUM_GAP': Aircraft.Fuel.LNGTank.VACUUM_GAP,
     'ENV_DESIGN_PRESSURE': Aircraft.Fuel.LNGTank.ENV_DESIGN_PRESSURE,
-    'MAX_OPERATING_PRESSURE': (
-        Aircraft.Fuel.LNGTank.MAX_OPERATING_PRESSURE
-    ),
+    'MAX_OPERATING_PRESSURE': (Aircraft.Fuel.LNGTank.MAX_OPERATING_PRESSURE),
 }
 
 
@@ -113,17 +107,25 @@ if __name__ == '__main__':
 
     # 2. Load the advanced single aisle aircraft definition
     csv_path = get_aviary_resource_path(
-        'models/aircraft/advanced_single_aisle'
-        '/advanced_single_aisle_FLOPS.csv'
+        'models/aircraft/advanced_single_aisle/advanced_single_aisle_FLOPS.csv'
     )
     prob.load_inputs(csv_path, phase_info)
 
-    # 3. Register the LNG tank external subsystem
+    # 3. Register the LNG tank external subsystem.
+    # ullage_T_init=120 K: the LNGTankThermals default of 111 K sits
+    # below the ~116.66 K saturation temperature of methane at the
+    # 1.5 bar default ullage pressure. At a sub-saturation temperature
+    # CoolProp returns the *liquid* density for the ullage (giving an
+    # absurd ~1200 kg of "gas"), and the saturated-property lookups
+    # then fall outside CoolProp's valid two-phase range, raising
+    # "max() iterable argument is empty" and failing the boil-off IVP
+    # initial-guess solver. 120 K keeps the ullage a proper vapor.
     lng_builder = CryoTankBuilder(
         name='lng_tank',
         meta_data=ExtendedMetaData,
         tank_vars=_LNG_TANK_VARS,
         thermals_class=LNGTankThermals,
+        thermals_kwargs={'ullage_T_init': 120.0},
         t_env_default=300.0,
     )
     prob.load_external_subsystems([lng_builder])
@@ -140,6 +142,7 @@ if __name__ == '__main__':
 
     # 5. Add optimizer, design variables, and objective
     prob.add_driver('IPOPT')
+    prob.driver.opt_settings['max_iter'] = 200
     prob.add_design_variables()
     prob.add_objective('fuel_burned')
 
@@ -161,64 +164,49 @@ if __name__ == '__main__':
     prob.set_val(Aircraft.Fuel.LNGTank.N_LAYERS, 30)
     prob.set_val(Aircraft.Fuel.LNGTank.VACUUM_GAP, 5, units='cm')
     prob.set_val(
-        Aircraft.Fuel.LNGTank.ENV_DESIGN_PRESSURE, 1.0, units='bar',
+        Aircraft.Fuel.LNGTank.ENV_DESIGN_PRESSURE,
+        1.0,
+        units='bar',
     )
     prob.set_val(
-        Aircraft.Fuel.LNGTank.MAX_OPERATING_PRESSURE, 5.0, units='bar',
+        Aircraft.Fuel.LNGTank.MAX_OPERATING_PRESSURE,
+        5.0,
+        units='bar',
     )
     # Scale the mission fuel-flow rate seen by HyTank.
     # 1.0 = use mission values as-is; 2.0 = double the extraction rate.
     prob.set_val('lng_tank.assembler.flow_rate_scale', 1.0)
 
-    # 7b. Seed the mass state trajectory so IPOPT starts from a
-    # physically meaningful point. Without these guesses the optimizer
-    # drifts to a near-zero throttle local minimum (producing
-    # fuel_flow_rate_negative_total ≈ 0 and therefore m_dot_liq_out ≈ 0).
-    #
-    # Values are approximate for the advanced single aisle at 130 klbm
-    # MTOW; LNG fuel is ~86% of jet-fuel mass for equal energy
-    # (LNG LHV ≈ 50 MJ/kg vs jet fuel ≈ 43 MJ/kg). Scalars broadcast
-    # to all Dymos collocation nodes.
-    _DESIGN_GROSS_MASS_LBM = 130_000.0
-    _LNG_MISSION_FUEL_LBM = 18_000.0
-    prob.set_val(
-        'traj.climb.states:mass',
-        _DESIGN_GROSS_MASS_LBM,
-        units='lbm',
-    )
-    prob.set_val(
-        'traj.cruise.states:mass',
-        _DESIGN_GROSS_MASS_LBM - 0.4 * _LNG_MISSION_FUEL_LBM,
-        units='lbm',
-    )
-    prob.set_val(
-        'traj.descent.states:mass',
-        _DESIGN_GROSS_MASS_LBM - _LNG_MISSION_FUEL_LBM,
-        units='lbm',
-    )
+    # Takeoff inputs required by the simplified takeoff group when
+    # phase_info enables ``include_takeoff``. The advanced single
+    # aisle CSV ships ``thrust_takeoff_per_eng = 0`` and omits
+    # ``lift_over_drag`` (whose metadata default is 0). The takeoff
+    # rolling-distance formula divides by lift_over_drag, so a 0 value
+    # yields inf/NaN that poisons the takeoff->climb mach/altitude
+    # connection constraints and aborts IPOPT on the first iteration.
+    # These values match the sibling FLOPS benchmark for this airframe.
+    prob.set_val(Aircraft.Design.THRUST_TAKEOFF_PER_ENG, 28928.1, units='lbf')
+    prob.set_val(Mission.Takeoff.LIFT_OVER_DRAG, 17.354)
 
     # 8. Run the Aviary problem
     prob.run_aviary_problem()
 
     # 9. Print results
     tank_mass_lbm = prob.get_val(
-        Aircraft.Fuel.FUEL_SYSTEM_MASS, units='lbm',
+        Aircraft.Fuel.FUEL_SYSTEM_MASS,
+        units='lbm',
     ).item()
-    print(
-        f'\nLNG Tank Weight (fuel system mass): '
-        f'{tank_mass_lbm:.2f} lbm'
-    )
-    print(
-        f'LNG Tank Weight: '
-        f'{tank_mass_lbm / KG_TO_LBM:.2f} kg'
-    )
+    print(f'\nLNG Tank Weight (fuel system mass): {tank_mass_lbm:.2f} lbm')
+    print(f'LNG Tank Weight: {tank_mass_lbm / KG_TO_LBM:.2f} kg')
 
     # 10. Post-mission tank state driven by climb/cruise/descent bus.
     duration_s = prob.get_val(
-        'lng_tank.assembler.mission_duration', units='s',
+        'lng_tank.assembler.mission_duration',
+        units='s',
     ).item()
     m_dot_liq_kgps = prob.get_val(
-        'lng_tank.m_dot_liq_out', units='kg/s',
+        'lng_tank.m_dot_liq_out',
+        units='kg/s',
     )
     m_liq_kg = prob.get_val('lng_tank.m_liq', units='kg')
     P_bar = prob.get_val('lng_tank.P', units='bar')
@@ -240,24 +228,12 @@ if __name__ == '__main__':
         f'end={m_liq_kg[-1]:.1f} kg, '
         f'burned={m_liq_kg[0] - m_liq_kg[-1]:.1f} kg'
     )
+    print(f'Ullage pressure: start={P_bar[0]:.2f} bar, end={P_bar[-1]:.2f} bar')
     print(
-        f'Ullage pressure: '
-        f'start={P_bar[0]:.2f} bar, '
-        f'end={P_bar[-1]:.2f} bar'
+        f'Ullage temperature: start={T_gas_K[0]:.2f} K, end={T_gas_K[-1]:.2f} K'
     )
     print(
-        f'Ullage temperature: '
-        f'start={T_gas_K[0]:.2f} K, '
-        f'end={T_gas_K[-1]:.2f} K'
+        f'Liquid temperature: start={T_liq_K[0]:.2f} K, end={T_liq_K[-1]:.2f} K'
     )
-    print(
-        f'Liquid temperature: '
-        f'start={T_liq_K[0]:.2f} K, '
-        f'end={T_liq_K[-1]:.2f} K'
-    )
-    print(
-        f'Fill level: '
-        f'start={fill[0] * 100:.1f}%, '
-        f'end={fill[-1] * 100:.1f}%'
-    )
+    print(f'Fill level: start={fill[0] * 100:.1f}%, end={fill[-1] * 100:.1f}%')
     print(Mission.BLOCK_FUEL, prob.get_val(Mission.BLOCK_FUEL))
