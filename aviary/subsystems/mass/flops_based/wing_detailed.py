@@ -396,32 +396,43 @@ class BWBDetailedWingBendingFact(om.ExplicitComponent):
         wingspan = inputs[Aircraft.Wing.SPAN][0]
         rate_span = (wingspan - width) / wingspan
 
-        input_station_dist = self.options[Aircraft.Wing.INPUT_STATION_DISTRIBUTION]
+        input_station_dist = np.asarray(
+            self.options[Aircraft.Wing.INPUT_STATION_DISTRIBUTION]
+        )
 
+        # Stations greater than 1.0 are dimensional (ft), otherwise they are
+        # fractions of the semispan. Classify them from the real-valued option
+        # rather than from complex intermediates: under complex step, a mapped
+        # tip station of 1.0 can carry a tiny positive imaginary part, which
+        # numpy's lexicographic complex ordering treats as greater than 1.0.
         if root < 1:
             bwb_input_station_dist = np.zeros(len(input_station_dist) + 1, dtype=width.dtype)
             bwb_input_station_dist[1:] = input_station_dist
+            is_dimensional = np.zeros(len(bwb_input_station_dist), dtype=bool)
+            is_dimensional[1:] = input_station_dist > 1.0
             if not self.options[Aircraft.BWB.DETAILED_WING_PROVIDED]:
                 bwb_input_station_dist[1] = width / 2.0
             else:
                 bwb_input_station_dist = np.where(
-                    bwb_input_station_dist <= 1.0,
-                    bwb_input_station_dist * rate_span + width / wingspan,  # if x <= 1.0
-                    bwb_input_station_dist + width / 2.0,  # else
+                    is_dimensional,
+                    bwb_input_station_dist + width / 2.0,
+                    bwb_input_station_dist * rate_span + width / wingspan,
                 )
                 bwb_input_station_dist[0] = 0.0
                 bwb_input_station_dist[1] = width / 2.0
 
-        else:
-            bwb_input_station_dist = np.asarray(input_station_dist)
+            # The side of body station is set from the fuselage width (ft)
+            is_dimensional[1] = width.real / 2.0 > 1.0
 
-        inp_stations_mod = []
-        for x in bwb_input_station_dist:
-            if x > 1.0:
-                inp_stations_mod.append(2 * x / wingspan)
-            else:
-                inp_stations_mod.append(x)
-        inp_stations_mod = np.array(inp_stations_mod)
+        else:
+            bwb_input_station_dist = input_station_dist
+            is_dimensional = input_station_dist > 1.0
+
+        inp_stations_mod = np.where(
+            is_dimensional,
+            2 * bwb_input_station_dist / wingspan,
+            bwb_input_station_dist,
+        )
 
         if root == 0:
             # Remove prepended centerline for this calculation.
@@ -444,7 +455,7 @@ class BWBDetailedWingBendingFact(om.ExplicitComponent):
         chord = inputs['BWB_CHORD_PER_SEMISPAN_DISTRIBUTION']
         chord_mod = []
         for x in chord:
-            if x > 5.0:
+            if x.real > 5.0:
                 chord_mod.append(2 * x / wingspan)
             else:
                 chord_mod.append(x * ar_scale_factor)

@@ -825,6 +825,69 @@ class BWBDetailedWingBendingTest(unittest.TestCase):
         assert_near_equal(prob.get_val('calculated_wing_area'), 4151.88659141, tolerance=1e-9)
         assert_near_equal(pod_inertia, pod_inertia_expected, tolerance=1e-9)
 
+    def test_complex_step_tip_station(self):
+        """
+        Under complex step, the mapped tip station (1.0) can carry a tiny positive imaginary
+        part. It must still be treated as a semispan fraction, not as a dimension in ft, or the
+        stations are no longer ascending.
+        """  # noqa: D400
+        prob = self.prob
+
+        aviary_options = AviaryValues()
+        aviary_options.set_val(Aircraft.Engine.NUM_ENGINES, [2], units='unitless')
+        aviary_options.set_val(Aircraft.Engine.NUM_WING_ENGINES, [0], units='unitless')
+        aviary_options.set_val(Aircraft.Propulsion.TOTAL_NUM_WING_ENGINES, 0, units='unitless')
+        aviary_options.set_val(
+            Aircraft.Wing.INPUT_STATION_DISTRIBUTION,
+            [0.23955187949142026, 0.5717606453860752, 1.0],
+            units='unitless',
+        )
+        aviary_options.set_val(Aircraft.Wing.NUM_INTEGRATION_STATIONS, 100, units='unitless')
+        aviary_options.set_val(Aircraft.BWB.DETAILED_WING_PROVIDED, True, units='unitless')
+
+        prob.model.add_subsystem(
+            'bending',
+            BWBDetailedWingBendingFact(),
+            promotes_inputs=['*'],
+            promotes_outputs=['*'],
+        )
+
+        setup_model_options(self.prob, aviary_options)
+        prob.setup(check=False, force_alloc_complex=True)
+
+        prob.set_val(Aircraft.Design.GROSS_MASS, 150000.0, units='lbm')
+        prob.set_val(Aircraft.Engine.POD_MASS, np.array([0.0]), units='lbm')
+        prob.set_val(Aircraft.Engine.WING_LOCATIONS, np.array([0.0]))
+        prob.set_val(Aircraft.Wing.ASPECT_RATIO, 11.138447)
+        prob.set_val(Aircraft.Wing.ASPECT_RATIO_REFERENCE, 11.138447)
+        prob.set_val(Aircraft.Wing.AEROELASTIC_TAILORING_FACTOR, 0.33333)
+        prob.set_val(Aircraft.Wing.THICKNESS_TO_CHORD, 0.1)
+        prob.set_val(Aircraft.Wing.THICKNESS_TO_CHORD_REFERENCE, 0.088289)
+        prob.set_val(Aircraft.Wing.LOAD_DISTRIBUTION_CONTROL, 2.0)
+        prob.set_val(Aircraft.Wing.SPAN, 170.84999834250007, units='ft')
+        prob.set_val(Aircraft.Fuselage.MAX_WIDTH, 40.92743821405193, units='ft')
+        prob.set_val(
+            'BWB_CHORD_PER_SEMISPAN_DISTRIBUTION',
+            [91.67212, 24.81051, 0.1244435, 0.05222781],
+            units='unitless',
+        )
+        prob.set_val(
+            'BWB_THICKNESS_TO_CHORD_DISTRIBUTION',
+            [0.268784, 0.1, 0.1, 0.1],
+            units='unitless',
+        )
+        prob.set_val(
+            'BWB_LOAD_PATH_SWEEP_DISTRIBUTION',
+            [0.0, 23.37852, 23.37852],
+            units='deg',
+        )
+
+        prob.run_model()
+
+        # Raises "points must be strictly ascending" if the tip is misclassified
+        partial_data = prob.check_partials(out_stream=None, method='cs')
+        self.assertIn('bending', partial_data)
+
 
 if __name__ == '__main__':
     unittest.main()
