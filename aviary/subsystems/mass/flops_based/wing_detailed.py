@@ -394,7 +394,6 @@ class BWBDetailedWingBendingFact(om.ExplicitComponent):
 
         width = inputs[Aircraft.Fuselage.MAX_WIDTH][0]
         wingspan = inputs[Aircraft.Wing.SPAN][0]
-        rate_span = (wingspan - width) / wingspan
 
         input_station_dist = np.asarray(
             self.options[Aircraft.Wing.INPUT_STATION_DISTRIBUTION]
@@ -413,10 +412,17 @@ class BWBDetailedWingBendingFact(om.ExplicitComponent):
             if not self.options[Aircraft.BWB.DETAILED_WING_PROVIDED]:
                 bwb_input_station_dist[1] = width / 2.0
             else:
+                # Fractional stations x map to x * (span - width) / span
+                # + width / span. It is written as below so that the tip
+                # station (x = 1) stays exactly 1.0 + 0j under complex step.
+                # Otherwise round-off leaves a tiny imaginary part at the
+                # tip, where sqrt(1 - y**2) in the load intensity has an
+                # infinite slope and the derivatives blow up.
                 bwb_input_station_dist = np.where(
                     is_dimensional,
                     bwb_input_station_dist + width / 2.0,
-                    bwb_input_station_dist * rate_span + width / wingspan,
+                    bwb_input_station_dist
+                    + (1.0 - bwb_input_station_dist) * width / wingspan,
                 )
                 bwb_input_station_dist[0] = 0.0
                 bwb_input_station_dist[1] = width / 2.0
